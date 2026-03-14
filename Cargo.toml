@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/bike-core",
+    "crates/bike-predict",
+    "crates/bike-optimize",
+    "crates/bike-server",
+]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+rand = "0.8"
+tracing = "0.1"
+
+bike-core = { path = "crates/bike-core" }
+bike-predict = { path = "crates/bike-predict" }
+bike-optimize = { path = "crates/bike-optimize" }

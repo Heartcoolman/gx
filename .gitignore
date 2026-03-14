@@ -1,0 +1,8 @@
+**/target/
+**/node_modules/
+**/dist/
+**/build/
+*.log
+benchmark_results.json
+.DS_Store
+Cargo.lock
