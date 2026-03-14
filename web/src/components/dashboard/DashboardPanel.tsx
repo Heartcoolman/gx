@@ -17,30 +17,39 @@ export default function DashboardPanel() {
   const { activeTab, setActiveTab } = useUIStore();
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-panel)' }}>
       <div style={{
         display: 'flex',
-        gap: 0,
+        gap: 8,
         padding: '0 16px',
-        borderBottom: '1px solid #e2e8f0',
-        background: '#f8fafc',
+        borderBottom: '1px solid var(--border-color)',
+        background: 'var(--bg-panel)',
+        zIndex: 1,
       }}>
         {TABS.map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
             style={{
-              padding: '8px 16px',
+              padding: '12px 16px',
               border: 'none',
               background: 'transparent',
-              borderBottom: activeTab === key ? '2px solid #2563eb' : '2px solid transparent',
-              color: activeTab === key ? '#2563eb' : '#64748b',
-              fontWeight: activeTab === key ? 600 : 400,
+              position: 'relative',
+              color: activeTab === key ? 'var(--primary)' : 'var(--text-muted)',
+              fontWeight: activeTab === key ? 600 : 500,
               fontSize: 13,
               cursor: 'pointer',
+              transition: 'color var(--transition-fast)',
             }}
           >
             {label}
+            {activeTab === key && (
+              <div style={{
+                position: 'absolute', bottom: 0, left: '10%', right: '10%', height: 3,
+                background: 'var(--primary)', borderRadius: '3px 3px 0 0',
+                boxShadow: '0 -2px 6px rgba(59, 130, 246, 0.3)'
+              }} />
+            )}
           </button>
         ))}
       </div>

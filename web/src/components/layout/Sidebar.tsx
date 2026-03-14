@@ -11,42 +11,62 @@ export default function Sidebar() {
 
   return (
     <aside style={{
-      width: 300,
-      background: '#f8fafc',
-      borderRight: '1px solid #e2e8f0',
+      width: 320,
+      background: 'var(--bg-sidebar)',
+      backdropFilter: 'blur(20px)',
+      WebkitBackdropFilter: 'blur(20px)',
+      borderRight: '1px solid var(--border-color)',
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
+      boxShadow: '1px 0 10px rgba(0,0,0,0.02)',
+      zIndex: 5,
     }}>
       {/* Tab switcher */}
       <div style={{
         display: 'flex',
-        borderBottom: '1px solid #e2e8f0',
-        background: '#f1f5f9',
+        borderBottom: '1px solid var(--border-color)',
+        background: 'rgba(255, 255, 255, 0.5)',
       }}>
         <button
           onClick={() => setTab('sim')}
           style={{
-            flex: 1, padding: '10px 0', border: 'none', background: 'transparent',
-            borderBottom: tab === 'sim' ? '2px solid #2563eb' : '2px solid transparent',
-            color: tab === 'sim' ? '#2563eb' : '#64748b',
-            fontWeight: tab === 'sim' ? 600 : 400,
-            fontSize: 13, cursor: 'pointer',
+            flex: 1, padding: '14px 0', border: 'none', background: 'transparent',
+            position: 'relative',
+            color: tab === 'sim' ? 'var(--primary)' : 'var(--text-muted)',
+            fontWeight: tab === 'sim' ? 600 : 500,
+            fontSize: 14, cursor: 'pointer',
+            transition: 'color var(--transition-normal)',
           }}
         >
           仿真控制
+          {tab === 'sim' && (
+            <div style={{
+              position: 'absolute', bottom: 0, left: '20%', right: '20%', height: 3,
+              background: 'var(--primary)', borderRadius: '3px 3px 0 0',
+              boxShadow: '0 -2px 6px rgba(59, 130, 246, 0.4)'
+            }} />
+          )}
         </button>
         <button
           onClick={() => setTab('benchmark')}
           style={{
-            flex: 1, padding: '10px 0', border: 'none', background: 'transparent',
-            borderBottom: tab === 'benchmark' ? '2px solid #7c3aed' : '2px solid transparent',
-            color: tab === 'benchmark' ? '#7c3aed' : '#64748b',
-            fontWeight: tab === 'benchmark' ? 600 : 400,
-            fontSize: 13, cursor: 'pointer',
+            flex: 1, padding: '14px 0', border: 'none', background: 'transparent',
+            position: 'relative',
+            color: tab === 'benchmark' ? 'var(--purple)' : 'var(--text-muted)',
+            fontWeight: tab === 'benchmark' ? 600 : 500,
+            fontSize: 14, cursor: 'pointer',
+            transition: 'color var(--transition-normal)',
           }}
         >
           对比实验
+          {tab === 'benchmark' && (
+            <div style={{
+              position: 'absolute', bottom: 0, left: '20%', right: '20%', height: 3,
+              background: 'var(--purple)', borderRadius: '3px 3px 0 0',
+              boxShadow: '0 -2px 6px rgba(139, 92, 246, 0.4)'
+            }} />
+          )}
         </button>
       </div>
 

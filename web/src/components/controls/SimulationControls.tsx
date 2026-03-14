@@ -8,61 +8,51 @@ export default function SimulationControls() {
   const { isWarming } = useUIStore();
   const { play, pause, step, reset, changeSpeed, toggleDispatch } = useEngineControls();
 
-  const btnStyle = (active = false): React.CSSProperties => ({
-    padding: '6px 14px',
-    border: 'none',
-    borderRadius: 6,
-    cursor: isWarming ? 'wait' : 'pointer',
-    background: active ? '#2563eb' : '#e2e8f0',
-    color: active ? '#fff' : '#334155',
-    fontWeight: 500,
-    fontSize: 13,
-    opacity: isWarming ? 0.6 : 1,
-  });
+  const btnClass = (active = false, isPrimary = false) => {
+    if (active) return isPrimary ? 'btn btn-primary' : 'btn btn-secondary btn-active';
+    return isPrimary ? 'btn btn-primary' : 'btn btn-secondary';
+  };
 
   return (
     <div>
       <div style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 8 }}>
         仿真控制
       </div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {engineState !== 'running' ? (
           <button
-            style={btnStyle(true)}
+            className={btnClass(true, true)}
             onClick={play}
             disabled={isWarming}
           >
             ▶ 播放
           </button>
         ) : (
-          <button style={btnStyle()} onClick={pause}>
+          <button className={btnClass(false, false)} onClick={pause}>
             ⏸ 暂停
           </button>
         )}
         <button
-          style={btnStyle()}
+          className={btnClass(false, false)}
           onClick={step}
           disabled={engineState === 'running' || isWarming}
         >
           ⏭ 步进
         </button>
-        <button style={btnStyle()} onClick={() => reset()}>
+        <button className={btnClass(false, false)} onClick={() => reset()}>
           ↻ 重置
         </button>
       </div>
-      <div style={{ marginTop: 10 }}>
-        <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>
-          速度: {speed}x
+      <div style={{ marginTop: 16 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>
+          倍速: <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{speed}x</span>
         </div>
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div style={{ display: 'flex', gap: 6 }}>
           {SPEED_OPTIONS.map((s) => (
             <button
               key={s}
-              style={{
-                ...btnStyle(speed === s),
-                padding: '4px 10px',
-                fontSize: 12,
-              }}
+              className={s === speed ? 'btn btn-secondary btn-active' : 'btn btn-secondary'}
+              style={{ padding: '4px 12px', fontSize: 12 }}
               onClick={() => changeSpeed(s)}
             >
               {s}x
@@ -76,19 +66,20 @@ export default function SimulationControls() {
         </div>
       )}
       <div style={{
-        marginTop: 14,
-        padding: '10px 12px',
-        background: dispatchEnabled ? '#eff6ff' : '#fef2f2',
-        borderRadius: 8,
-        border: `1px solid ${dispatchEnabled ? '#bfdbfe' : '#fecaca'}`,
+        marginTop: 18,
+        padding: '12px 14px',
+        background: dispatchEnabled ? 'rgba(59, 130, 246, 0.05)' : 'rgba(239, 68, 68, 0.03)',
+        borderRadius: 'var(--radius-md)',
+        border: `1px solid ${dispatchEnabled ? 'rgba(59, 130, 246, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
+        transition: 'all var(--transition-normal)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-main)' }}>
               调度算法
             </div>
-            <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-              {dispatchEnabled ? '已启用 - 每30分钟自动调度' : '已关闭 - 自然流动模式'}
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+              {dispatchEnabled ? '已启用 - 每30分钟进行重平衡' : '已关闭 - 自然流动模式'}
             </div>
           </div>
           <div
@@ -97,11 +88,12 @@ export default function SimulationControls() {
               width: 44,
               height: 24,
               borderRadius: 12,
-              background: dispatchEnabled ? '#2563eb' : '#cbd5e1',
+              background: dispatchEnabled ? 'var(--primary)' : 'var(--border-color)',
               cursor: 'pointer',
               position: 'relative',
-              transition: 'background 0.2s',
+              transition: 'background var(--transition-fast)',
               flexShrink: 0,
+              boxShadow: dispatchEnabled ? '0 2px 6px rgba(59, 130, 246, 0.3)' : 'inset 0 2px 4px rgba(0,0,0,0.05)',
             }}
           >
             <div style={{
@@ -112,8 +104,8 @@ export default function SimulationControls() {
               position: 'absolute',
               top: 2,
               left: dispatchEnabled ? 22 : 2,
-              transition: 'left 0.2s',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+              transition: 'left var(--transition-fast)',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
             }} />
           </div>
         </div>

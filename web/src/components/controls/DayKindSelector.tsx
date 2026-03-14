@@ -17,15 +17,7 @@ export default function DayKindSelector() {
       <select
         value={dayKind}
         onChange={(e) => changeDayKind(e.target.value as DayKind)}
-        style={{
-          width: '100%',
-          padding: '6px 10px',
-          border: '1px solid #cbd5e1',
-          borderRadius: 6,
-          fontSize: 13,
-          background: '#fff',
-          color: '#334155',
-        }}
+        className="form-select"
       >
         {DAY_KINDS.map((dk) => (
           <option key={dk} value={dk}>{DAY_KIND_LABELS[dk]}</option>

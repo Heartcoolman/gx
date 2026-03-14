@@ -13,13 +13,15 @@ export default function AppLayout() {
       overflow: 'hidden',
     }}>
       <Header />
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative', zIndex: 1 }}>
         <Sidebar />
-        <main style={{ flex: 1, position: 'relative' }}>
-          <CampusMap />
+        <main style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1, position: 'relative' }}>
+            <CampusMap />
+          </div>
+          <BottomPanel />
         </main>
       </div>
-      <BottomPanel />
     </div>
   );
 }
