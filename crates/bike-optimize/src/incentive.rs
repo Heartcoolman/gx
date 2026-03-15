@@ -5,6 +5,17 @@ use chrono::{Duration, Utc};
 
 use crate::greedy::StationGap;
 
+/// Weather multiplier for incentive strength.
+/// Bad weather → stronger incentives needed to motivate riders.
+fn weather_intensity_factor(weather: Option<&str>) -> f64 {
+    match weather {
+        Some("storm") => 1.5,
+        Some("rain") => 1.25,
+        Some("cold_front") => 1.15,
+        _ => 1.0,
+    }
+}
+
 /// Compute cost-optimised price incentives, coordinated with the vehicle dispatch plan.
 ///
 /// `vehicle_inflow` maps each deficit station to the number of bikes that dispatched
@@ -28,6 +39,7 @@ pub(crate) fn compute_incentives(
     surpluses: &[StationGap],
     deficits: &[StationGap],
     vehicle_inflow: &HashMap<StationId, u32>,
+    weather: Option<&str>,
 ) -> Vec<PriceIncentive> {
     let max_discount = input.config.max_incentive_discount;
     let budget = input.config.incentive_budget_per_hour;
@@ -52,6 +64,8 @@ pub(crate) fn compute_incentives(
     let empty_count = deficits.iter().filter(|d| d.current_bikes == 0).count();
     // Unlock free rides when the system is genuinely stressed.
     let allow_free = pressure > 0.25 || empty_count >= 2;
+
+    let weather_factor = weather_intensity_factor(weather);
 
     let mut incentives: Vec<PriceIncentive> = Vec::new();
     let mut running_cost = 0.0_f64;
@@ -80,7 +94,7 @@ pub(crate) fn compute_incentives(
         let discount = if allow_free && deficit.urgency >= 5.0 && incoming == 0 {
             100.0 // truly free ride — only when no vehicle at all
         } else {
-            (max_discount * 0.80).clamp(50.0, 100.0)
+            (max_discount * 0.80 * weather_factor).clamp(50.0, 100.0)
         };
 
         // Scale expected demand by the residual fraction so cost is proportional.
@@ -134,9 +148,9 @@ pub(crate) fn compute_incentives(
         let raw_discount     = inverse_logistic(target_influence);
 
         let discount = if deficit.current_bikes <= 2 {
-            (raw_discount * 1.35).min(max_discount)
+            (raw_discount * 1.35 * weather_factor).min(max_discount)
         } else {
-            raw_discount.min(max_discount)
+            (raw_discount * weather_factor).min(max_discount)
         };
 
         let expected_demand = residual * 1.5;
@@ -357,7 +371,7 @@ mod tests {
             urgency: 0.0,
         }];
 
-        let incentives = compute_incentives(&input, &surpluses, &deficits, &Default::default());
+        let incentives = compute_incentives(&input, &surpluses, &deficits, &Default::default(), None);
 
         let arrival = incentives
             .iter()
@@ -417,7 +431,7 @@ mod tests {
             urgency: 0.4,
         }];
 
-        let incentives = compute_incentives(&input, &[], &deficits, &Default::default());
+        let incentives = compute_incentives(&input, &[], &deficits, &Default::default(), None);
 
         let arr = incentives
             .iter()
@@ -497,7 +511,7 @@ mod tests {
             })
             .collect();
 
-        let incentives = compute_incentives(&input, &[], &deficits, &Default::default());
+        let incentives = compute_incentives(&input, &[], &deficits, &Default::default(), None);
         let avg_fare = 2.0_f64;
         let total_cost: f64 = incentives.iter().map(|inc| {
             incentive_cost(inc.discount_percent, 15.0, avg_fare)
@@ -580,7 +594,7 @@ mod tests {
             urgency: 0.0,
         }];
 
-        let incentives = compute_incentives(&input, &surpluses, &deficits, &Default::default());
+        let incentives = compute_incentives(&input, &surpluses, &deficits, &Default::default(), None);
 
         let dep = incentives.iter().find(|i| i.incentive_type == IncentiveType::DepartureDiscount);
         if let Some(dep) = dep {
@@ -669,8 +683,8 @@ mod tests {
         let mut full_coverage: HashMap<StationId, u32> = HashMap::new();
         full_coverage.insert(StationId(0), 20);
 
-        let incentives_with_vehicle = compute_incentives(&input, &surpluses, &deficits, &full_coverage);
-        let incentives_no_vehicle   = compute_incentives(&input, &surpluses, &deficits, &Default::default());
+        let incentives_with_vehicle = compute_incentives(&input, &surpluses, &deficits, &full_coverage, None);
+        let incentives_no_vehicle   = compute_incentives(&input, &surpluses, &deficits, &Default::default(), None);
 
         // Without vehicle: station 0 (empty, high urgency) should get a free ride incentive.
         assert!(
@@ -734,8 +748,8 @@ mod tests {
         let mut partial: HashMap<StationId, u32> = HashMap::new();
         partial.insert(StationId(0), 10);
 
-        let inc_partial = compute_incentives(&input, &[], &deficits, &partial);
-        let inc_none    = compute_incentives(&input, &[], &deficits, &Default::default());
+        let inc_partial = compute_incentives(&input, &[], &deficits, &partial, None);
+        let inc_none    = compute_incentives(&input, &[], &deficits, &Default::default(), None);
 
         // Both should issue an incentive (residual gap still exists).
         let cost_partial = inc_partial.iter()

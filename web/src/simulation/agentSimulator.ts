@@ -1,6 +1,7 @@
 import { distanceMatrix } from './distanceMatrix';
 import { random } from './rng';
 import { computeRealisticTravelDuration } from './ridingModel';
+import { interpolateWeatherState } from '../data/scenarioLibrary';
 import type { StationCategory } from '../types/station';
 import { CATEGORY_ORDER } from '../types/station';
 import type {
@@ -148,6 +149,8 @@ export class AgentSimulator {
       }
     }
 
+    const weatherState = interpolateWeatherState(slotIndex, this.scenario.weatherTimeline);
+
     return {
       slotIndex,
       weather: weatherWindow.weather,
@@ -157,6 +160,10 @@ export class AgentSimulator {
       travelTimeMultiplier: clamp(travelTimeMultiplier, 1, 1.55),
       shortTripBoost: weatherWindow.shortTripBoost,
       categoryDemandBoost,
+      weatherState,
+      temperature: weatherState.temperature,
+      windSpeed: weatherState.windSpeed,
+      humidity: weatherState.humidity,
     };
   }
 
@@ -178,6 +185,8 @@ export class AgentSimulator {
     }
 
     let rideCounter = 0;
+    // Track rides per profile this slot for fatigue
+    const profileRideCount = new Map<string, number>();
     for (const profile of this.scenario.riderProfiles) {
       for (const window of profile.activityWindows) {
         if (!isSlotInWindow(slotIndex, window.startSlot, window.endSlot)) continue;
@@ -197,17 +206,51 @@ export class AgentSimulator {
         ) / Math.max(1, (window.endSlot - window.startSlot + 1) * 0.72);
 
         const expectedAttempts = baseline * context.demandMultiplier * simEnv.demandMultiplier;
-        const noisyAttempts = poissonSample(expectedAttempts * (1 + (simEnv.noiseFactor - 0.2) * 0.5));
+        // Multi-ride fatigue: reduce demand slightly after many rides from same profile
+        const currentCount = profileRideCount.get(profile.id) ?? 0;
+        const fatigueFactor = 1.0 / (1.0 + currentCount * 0.002);
+        const fatigueAdjustedAttempts = expectedAttempts * fatigueFactor;
+        const noisyAttempts = poissonSample(fatigueAdjustedAttempts * (1 + (simEnv.noiseFactor - 0.2) * 0.5));
+
+        // Group riding: 10-15% of rides are in groups of 2-4
+        const isGroupRide = random() < 0.125; // 12.5% chance
+        const groupSize = isGroupRide ? 2 + Math.floor(random() * 3) : 1; // 2-4 riders
 
         for (let attempt = 0; attempt < noisyAttempts; attempt++) {
+          // Sample rider traits for this individual attempt
+          const riderFitness = 0.7 + random() * 0.6;  // 0.7-1.3 fitness multiplier
+          const riderExperience = 0.5 + random() * 0.5; // 0.5-1.0 experience level
+          const weatherTolerance = profile.weatherSensitivity * (0.6 + random() * 0.8); // individual variation
+
           const origin = this.pickOriginStation(window);
           if (origin === null) continue;
+
+          // Group riding: check if enough bikes for the group
+          if (isGroupRide && groupSize > 1) {
+            const availableBikes = stateManager.getAvailableCount(origin);
+            if (availableBikes < groupSize) {
+              if (availableBikes === 0) {
+                stateManager.recordFailure(origin, 'no_bike');
+                continue;
+              }
+              // Only some of the group rides — proceed with reduced count
+            }
+          }
 
           const destination = this.pickDestinationStation(origin, window, context, profile);
           if (destination === null || origin === destination) continue;
 
           const distanceMeters = distanceMatrix[origin][destination];
-          if (this.shouldCancelForWeather(profile, context, distanceMeters)) {
+          // Use individual weatherTolerance instead of profile-level sensitivity
+          const distanceFactor = distanceMeters > 850 ? 1.22 : distanceMeters < 350 ? 0.84 / context.shortTripBoost : 1;
+          const weatherCancelBase = context.weather === 'storm'
+            ? 0.18
+            : context.weather === 'rain'
+              ? 0.08
+              : context.weather === 'cold_front'
+                ? 0.05
+                : 0;
+          if (random() < weatherCancelBase * (1 + weatherTolerance) * distanceFactor) {
             stateManager.recordFailure(origin, 'weather_cancelled');
             continue;
           }
@@ -220,9 +263,13 @@ export class AgentSimulator {
             travelTimeMultiplier: context.travelTimeMultiplier,
             windowProgress,
           });
+          // Fitness-adjusted travel duration: fitter riders are faster
+          const fitnessFactor = 1.0 / riderFitness;
+          const adjustedDuration = Math.round(travelDurationMs * fitnessFactor);
+
           const offsetMs = Math.floor(random() * SLOT_DURATION_MS);
           const departureTimeMs = slotStartMs + offsetMs;
-          const arrivalTimeMs = departureTimeMs + travelDurationMs;
+          const arrivalTimeMs = departureTimeMs + adjustedDuration;
           observations.push({
             origin,
             destination,
@@ -230,16 +277,29 @@ export class AgentSimulator {
             arrival_time: new Date(arrivalTimeMs).toISOString(),
           });
 
-          const pickup = this.tryResolvePickup(origin, window, slotIndex, stateManager, urgencyFactor);
+          // Adaptive walk tolerance based on weather and rider fitness
+          const adaptiveWalkTolerance = window.walkToleranceMeters
+            * (context.weather === 'storm' ? 0.5 : context.weather === 'rain' ? 0.7 : 1.0)
+            * (0.8 + riderFitness * 0.3);
+
+          const pickup = this.tryResolvePickup(origin, window, slotIndex, stateManager, urgencyFactor, adaptiveWalkTolerance);
           if (!pickup.ok) {
-            // Queue waiting: rider may decide to wait if no bike is available
-            // Urgency scales wait tolerance: urgent riders wait less, relaxed riders wait more
             const waitProb = (window.waitProbability ?? 0.3) * urgencyFactor.waitScale;
             if (random() < waitProb) {
               const maxWait = Math.max(1, Math.round((window.maxWaitSlots ?? 5) * urgencyFactor.waitScale));
               stateManager.enqueueWaiter(origin, maxWait, slotIndex);
             }
             continue;
+          }
+
+          // Experienced riders may reject low-health bikes
+          const bikeHealth = stateManager.getBikeHealth(pickup.bikeId);
+          if (bikeHealth !== undefined && bikeHealth < 0.5) {
+            const rejectChance = riderExperience * profile.bikeFaultSensitivity * (1 - bikeHealth);
+            if (random() < rejectChance) {
+              stateManager.recordFailure(origin, 'bike_fault');
+              continue;
+            }
           }
 
           const bikeId = pickup.bikeId;
@@ -256,24 +316,40 @@ export class AgentSimulator {
             stateManager.recordCategoryFlow(originCategoryIndex, destinationCategoryIndex);
           }
 
-          const ride: ActiveRideV2 = {
-            rideId: `ride-${slotIndex}-${rideCounter}`,
-            bikeId,
-            origin,
-            destination,
-            plannedDestination: destination,
-            fallbackStations: this.rankNearbyStations(destination),
-            departureTime: departureTimeMs,
-            arrivalTime: arrivalTimeMs,
-            progress: 0,
-            purpose: window.purpose,
-            riderProfileId: profile.id,
-            weather: context.weather,
-            distanceMeters,
-            overflowMeters: 0,
-          };
-          rideCounter++;
-          stateManager.createRide(ride);
+          // Create rides for group members with slightly staggered times
+          const ridesToCreate = isGroupRide ? Math.min(groupSize, stateManager.getAvailableCount(origin) + 1) : 1;
+          for (let g = 0; g < ridesToCreate; g++) {
+            let memberBikeId: string;
+            if (g === 0) {
+              memberBikeId = bikeId;
+            } else {
+              const extra = this.tryResolvePickup(origin, window, slotIndex, stateManager, urgencyFactor, adaptiveWalkTolerance);
+              if (!extra.ok) continue; // group member couldn't get a bike
+              stateManager.ageBike(extra.bikeId, distanceMeters, this.weatherWearMultiplier(context.weather));
+              memberBikeId = extra.bikeId;
+            }
+            const stagger = g * Math.floor(random() * 15000); // up to 15s stagger per group member
+            const ride: ActiveRideV2 = {
+              rideId: `ride-${slotIndex}-${rideCounter}`,
+              bikeId: memberBikeId,
+              origin,
+              destination,
+              plannedDestination: destination,
+              fallbackStations: this.rankNearbyStations(destination),
+              departureTime: departureTimeMs + stagger,
+              arrivalTime: arrivalTimeMs + stagger,
+              progress: 0,
+              purpose: window.purpose,
+              riderProfileId: profile.id,
+              weather: context.weather,
+              distanceMeters,
+              overflowMeters: 0,
+            };
+            rideCounter++;
+            stateManager.createRide(ride);
+          }
+          // Update fatigue tracking
+          profileRideCount.set(profile.id, (profileRideCount.get(profile.id) ?? 0) + ridesToCreate);
         }
       }
     }
@@ -324,28 +400,13 @@ export class AgentSimulator {
     return weightedPick(weights);
   }
 
-  private shouldCancelForWeather(
-    profile: RiderAgentProfile,
-    context: SlotEnvironmentContext,
-    distanceMeters: number,
-  ): boolean {
-    const distanceFactor = distanceMeters > 850 ? 1.22 : distanceMeters < 350 ? 0.84 / context.shortTripBoost : 1;
-    const baseChance = context.weather === 'storm'
-      ? 0.18
-      : context.weather === 'rain'
-        ? 0.08
-        : context.weather === 'cold_front'
-          ? 0.05
-          : 0;
-    return random() < baseChance * (1 + profile.weatherSensitivity) * distanceFactor;
-  }
-
   private tryResolvePickup(
     initialStationId: number,
     window: RiderActivityWindow,
     slotIndex: number,
     stateManager: StationStateManagerV2,
     urgency: { retryScale: number; waitScale: number },
+    walkTolerance: number,
   ): { ok: true; bikeId: string } | { ok: false } {
     const firstTry = stateManager.tryCheckoutBike(initialStationId, slotIndex);
     if (firstTry.ok) {
@@ -359,7 +420,7 @@ export class AgentSimulator {
 
     const alternatives = this.rankNearbyStations(initialStationId)
       .filter((stationId) => stationId !== initialStationId)
-      .filter((stationId) => distanceMatrix[initialStationId][stationId] <= window.walkToleranceMeters);
+      .filter((stationId) => distanceMatrix[initialStationId][stationId] <= walkTolerance);
 
     if (alternatives.length === 0) {
       stateManager.recordFailure(initialStationId, 'walk_transfer_exceeded');

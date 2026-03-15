@@ -16,6 +16,23 @@ pub struct SystemConfig {
     pub max_incentive_discount: f64,
     pub incentive_budget_per_hour: f64,
     pub rebalance_interval_minutes: u32,
+    /// Maximum route duration in minutes for dispatch vehicles
+    #[serde(default = "default_max_route_duration_minutes")]
+    pub max_route_duration_minutes: f64,
+    /// Distance cost reference for transfer scoring (meters)
+    #[serde(default = "default_distance_cost_reference")]
+    pub distance_cost_reference: f64,
+    /// Current weather condition (e.g. "rain", "storm", "cold_front")
+    #[serde(default)]
+    pub weather: Option<String>,
+}
+
+fn default_max_route_duration_minutes() -> f64 {
+    45.0
+}
+
+fn default_distance_cost_reference() -> f64 {
+    500.0
 }
 
 impl Default for SystemConfig {
@@ -32,6 +49,9 @@ impl Default for SystemConfig {
             max_incentive_discount: 60.0,
             incentive_budget_per_hour: 800.0,
             rebalance_interval_minutes: 15,
+            max_route_duration_minutes: 45.0,
+            distance_cost_reference: 500.0,
+            weather: None,
         }
     }
 }

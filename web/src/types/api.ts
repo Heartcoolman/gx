@@ -16,6 +16,8 @@ export interface PredictDemandResp {
   pickups: number;
   returns: number;
   net_flow: number;
+  confidence_low: number;
+  confidence_high: number;
 }
 
 // POST /api/v1/predict/demand/batch

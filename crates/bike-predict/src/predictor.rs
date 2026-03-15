@@ -16,6 +16,8 @@ struct BaselineEntry {
     total_pickups: f64,
     total_returns: f64,
     count: u64,
+    sum_sq_pickups: f64,
+    sum_sq_returns: f64,
 }
 
 impl BaselineEntry {
@@ -32,6 +34,22 @@ impl BaselineEntry {
         } else {
             self.total_returns / self.count as f64
         }
+    }
+
+    fn pickup_variance(&self) -> f64 {
+        if self.count < 2 {
+            return 0.0;
+        }
+        let mean = self.avg_pickups();
+        ((self.sum_sq_pickups / self.count as f64) - mean * mean).max(0.0)
+    }
+
+    fn return_variance(&self) -> f64 {
+        if self.count < 2 {
+            return 0.0;
+        }
+        let mean = self.avg_returns();
+        ((self.sum_sq_returns / self.count as f64) - mean * mean).max(0.0)
     }
 }
 
@@ -56,6 +74,7 @@ pub struct CompositePredictor {
     ewma: HashMap<SlotKey, EwmaEntry>,
     pending_pickups: HashMap<SlotKey, f64>,
     pending_returns: HashMap<SlotKey, f64>,
+    weather_baseline: HashMap<(StationId, u8, u32), BaselineEntry>,
 }
 
 impl CompositePredictor {
@@ -66,6 +85,7 @@ impl CompositePredictor {
             ewma: HashMap::new(),
             pending_pickups: HashMap::new(),
             pending_returns: HashMap::new(),
+            weather_baseline: HashMap::new(),
         }
     }
 
@@ -75,6 +95,7 @@ impl CompositePredictor {
         self.ewma.clear();
         self.pending_pickups.clear();
         self.pending_returns.clear();
+        self.weather_baseline.clear();
     }
 
     /// Commit all pending observations as a single epoch and clear the buffers.
@@ -98,6 +119,8 @@ impl CompositePredictor {
             total_pickups: 0.0,
             total_returns: 0.0,
             count: 0,
+            sum_sq_pickups: 0.0,
+            sum_sq_returns: 0.0,
         });
 
         let base_p = baseline.avg_pickups();
@@ -105,6 +128,8 @@ impl CompositePredictor {
 
         baseline.total_pickups += pickups;
         baseline.total_returns += returns;
+        baseline.sum_sq_pickups += pickups * pickups;
+        baseline.sum_sq_returns += returns * returns;
         baseline.count += 1;
 
         let pickup_dev = pickups - base_p;
@@ -170,15 +195,108 @@ impl CompositePredictor {
         let returns = (base_r + dev_r).max(0.0);
         (pickups, returns)
     }
+
+    /// Observe a demand record with an associated weather bucket.
+    /// Weather buckets: 0=clear, 1=cloudy, 2=rain, 3=storm, 4=cold.
+    pub fn observe_with_weather(&mut self, record: &DemandRecord, day_kind: DayKind, weather_bucket: u8) {
+        self.observe(record, day_kind);
+
+        let departure_slot = {
+            let dt = record.departure_time;
+            dt.hour() * 60 + dt.minute()
+        };
+        let arrival_slot = {
+            let dt = record.arrival_time;
+            dt.hour() * 60 + dt.minute()
+        };
+
+        // Update weather-specific baseline for pickup
+        let pickup_key = (record.origin, weather_bucket, departure_slot);
+        let entry = self.weather_baseline.entry(pickup_key).or_insert(BaselineEntry {
+            total_pickups: 0.0,
+            total_returns: 0.0,
+            count: 0,
+            sum_sq_pickups: 0.0,
+            sum_sq_returns: 0.0,
+        });
+        entry.total_pickups += 1.0;
+        entry.sum_sq_pickups += 1.0;
+        entry.count += 1;
+
+        // Update weather-specific baseline for return
+        let return_key = (record.destination, weather_bucket, arrival_slot);
+        let entry = self.weather_baseline.entry(return_key).or_insert(BaselineEntry {
+            total_pickups: 0.0,
+            total_returns: 0.0,
+            count: 0,
+            sum_sq_pickups: 0.0,
+            sum_sq_returns: 0.0,
+        });
+        entry.total_returns += 1.0;
+        entry.sum_sq_returns += 1.0;
+        entry.count += 1;
+    }
+
+    /// Apply spatial smoothing: stations within 500m share 15% of their signal.
+    pub fn spatial_smooth(&self, predictions: &mut [(StationId, PredictedDemand)], distance_matrix: &[Vec<f64>]) {
+        let smoothing_radius = 500.0; // meters
+        let smoothing_weight = 0.15;
+
+        let original: Vec<(StationId, PredictedDemand)> = predictions.to_vec();
+        for (i, (_, pred)) in predictions.iter_mut().enumerate() {
+            let mut neighbor_pickups = 0.0;
+            let mut neighbor_returns = 0.0;
+            let mut neighbor_count = 0.0;
+
+            for (j, (_, orig)) in original.iter().enumerate() {
+                if i == j { continue; }
+                let dist = distance_matrix.get(i).and_then(|r| r.get(j)).copied().unwrap_or(f64::MAX);
+                if dist <= smoothing_radius {
+                    let weight = 1.0 - (dist / smoothing_radius);
+                    neighbor_pickups += orig.pickups * weight;
+                    neighbor_returns += orig.returns * weight;
+                    neighbor_count += weight;
+                }
+            }
+
+            if neighbor_count > 0.0 {
+                pred.pickups = pred.pickups * (1.0 - smoothing_weight) + (neighbor_pickups / neighbor_count) * smoothing_weight;
+                pred.returns = pred.returns * (1.0 - smoothing_weight) + (neighbor_returns / neighbor_count) * smoothing_weight;
+                pred.net_flow = pred.returns - pred.pickups;
+            }
+        }
+    }
+
+    /// Returns true if the observed demand is anomalous (>2 std devs from baseline).
+    pub fn is_anomalous(&self, station_id: StationId, slot: TimeSlot, observed_pickups: f64) -> bool {
+        let key = (station_id, slot.day_kind, slot.slot_index);
+        if let Some(baseline) = self.baseline.get(&key) {
+            let mean = baseline.avg_pickups();
+            let variance = baseline.pickup_variance();
+            if variance > 0.0 {
+                let z_score = (observed_pickups - mean) / variance.sqrt();
+                return z_score.abs() > 2.0;
+            }
+        }
+        false
+    }
 }
 
 impl DemandPredictor for CompositePredictor {
     fn predict(&self, station_id: StationId, slot: TimeSlot) -> PredictedDemand {
         let (pickups, returns) = self.predict_raw(station_id, slot);
+        let key = (station_id, slot.day_kind, slot.slot_index);
+        let pickup_var = self.baseline.get(&key).map(|b| b.pickup_variance()).unwrap_or(0.0);
+        let return_var = self.baseline.get(&key).map(|b| b.return_variance()).unwrap_or(0.0);
+        let total_var = pickup_var + return_var;
+        let std_dev = total_var.sqrt();
+        let net = returns - pickups;
         PredictedDemand {
             pickups,
             returns,
-            net_flow: returns - pickups,
+            net_flow: net,
+            confidence_low: (net - 1.96 * std_dev).max(-(pickups + returns)),
+            confidence_high: net + 1.96 * std_dev,
         }
     }
 

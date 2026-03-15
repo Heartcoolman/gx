@@ -140,7 +140,13 @@ fn transfer_score(
     let effective_distance = if peak_mode { distance * 0.4 } else { distance };
     let trip_efficiency = take as f64 / (effective_distance + 100.0);
 
-    trip_efficiency * (urgency_weight + coverage_bonus) * source_efficiency * marginal_decay
+    // Add distance cost: penalize long-distance transfers more heavily
+    let distance_cost = 1.0 / (1.0 + distance / 500.0);
+
+    // Demand uncertainty penalty: deficits with low urgency might resolve naturally
+    let uncertainty_penalty = if deficit.urgency < 1.0 { 0.7 } else { 1.0 };
+
+    trip_efficiency * (urgency_weight + coverage_bonus) * source_efficiency * marginal_decay * distance_cost * uncertainty_penalty
 }
 
 /// Greedy assignment: satisfy deficits from nearest surpluses.
@@ -689,7 +695,8 @@ impl RebalanceSolver for GreedyRebalanceSolver {
                 map
             });
 
-        let incentives = compute_incentives(input, &surpluses, &deficits, &vehicle_inflow);
+        let weather_ref = input.config.weather.as_deref();
+        let incentives = compute_incentives(input, &surpluses, &deficits, &vehicle_inflow, weather_ref);
 
         RebalanceOutput {
             dispatch_plan,

@@ -9,6 +9,7 @@ import type {
   ScenarioPackage,
   SimulationSnapshotV2,
   SlotEnvironmentContext,
+  StationDockState,
   StationStateV2,
 } from '../types/scenario';
 import { STATIONS } from '../data/stations';
@@ -89,6 +90,9 @@ export class StationStateManagerV2 {
 
   // ── O(1) bike ID lookup ──
   private bikeIdToIndex: Map<string, number> = new Map();
+
+  /** Per-station dock fault tracking */
+  private dockStates: StationDockState[] = [];
 
   private slotServedDemand = 0;
   private slotUnmetDemand = 0;
@@ -197,6 +201,13 @@ export class StationStateManagerV2 {
 
     // Process waiting queues: serve or expire
     this.processWaitingQueues();
+
+    // Age all bikes
+    for (const bike of this.bikes) {
+      if (bike.ageSlots !== undefined) {
+        bike.ageSlots++;
+      }
+    }
   }
 
   /** Enqueue a rider who couldn't find a bike at the station. */
@@ -267,12 +278,14 @@ export class StationStateManagerV2 {
         availableBikes: c.available,
         brokenBikes: c.broken,
         maintenanceBikes: c.maintenance,
-        emptyDockCount: Math.max(0, station.capacity - c.docked),
-        queuedReturns: 0,
+        emptyDockCount: Math.max(0, this.getEffectiveCapacity(station.id) - c.docked),
+        queuedReturns: this.waitingQueues[station.id]?.length ?? 0,
         overflowReturns: this.recentOverflowByStation[station.id],
         recentUnmetDemand: this.recentUnmetByStation[station.id],
         temporaryHeat: this.temporaryHeatByStation[station.id],
         pressureIndex,
+        faultedDockCount: this.getFaultedDockCount(station.id),
+        effectiveCapacity: this.getEffectiveCapacity(station.id),
       };
     });
   }
@@ -333,7 +346,8 @@ export class StationStateManagerV2 {
 
       // Check if preferred destination has space
       const preferredOccupied = this.counters[ride.plannedDestination]?.docked ?? 0;
-      const preferredHasSpace = preferredOccupied < STATIONS[ride.plannedDestination].capacity;
+      const preferredCapacity = this.getEffectiveCapacity(ride.plannedDestination);
+      const preferredHasSpace = preferredOccupied < preferredCapacity;
 
       if (preferredHasSpace || ride.isOverflow) {
         // Normal arrival or second-overflow: force dock (no further overflow rides)
@@ -430,7 +444,8 @@ export class StationStateManagerV2 {
 
     for (const stationId of candidateStations) {
       const occupied = this.counters[stationId]?.docked ?? 0;
-      if (occupied < STATIONS[stationId].capacity) {
+      const effectiveCap = this.getEffectiveCapacity(stationId);
+      if (occupied < effectiveCap) {
         const overflowed = stationId !== preferredStationId || overflowMeters > 0;
         if (overflowed) {
           this.totalOverflowEvents++;
@@ -477,13 +492,67 @@ export class StationStateManagerV2 {
       * fatigueFactor
       * (0.9 + random() * 0.2);
     bike.health = clamp(bike.health - wear, 0.04, 1);
+
+    // Component-level degradation
+    if (bike.componentHealth) {
+      const km = distanceMeters / 1000;
+      const chainRate = this.scenario.bikeHealth.chainWearRate ?? 0.04;
+      const brakeRate = this.scenario.bikeHealth.brakeWearRate ?? 0.03;
+      const tireRate = this.scenario.bikeHealth.tireWearRate ?? 0.025;
+
+      // Age-accelerated wear: older bikes degrade faster
+      const ageFactor = 1.0 + Math.min((bike.ageSlots ?? 0) / 10000, 0.5);
+
+      bike.componentHealth.chain = clamp(
+        bike.componentHealth.chain - km * chainRate * healthWearMultiplier * ageFactor * (0.9 + random() * 0.2), 0.05, 1
+      );
+      bike.componentHealth.brake = clamp(
+        bike.componentHealth.brake - km * brakeRate * healthWearMultiplier * ageFactor * (0.9 + random() * 0.2), 0.05, 1
+      );
+      bike.componentHealth.tire = clamp(
+        bike.componentHealth.tire - km * tireRate * healthWearMultiplier * (0.9 + random() * 0.2), 0.05, 1
+      );
+
+      // Overall health is the minimum of components (weakest link)
+      const componentMin = Math.min(bike.componentHealth.chain, bike.componentHealth.brake, bike.componentHealth.tire);
+      bike.health = clamp(bike.health * 0.3 + componentMin * 0.7, 0.04, 1);
+    }
   }
 
   processMaintenance(slotIndex: number): void {
     for (const bike of this.bikes) {
+      // Preventive maintenance check
+      if (bike.maintenanceSchedule && slotIndex >= bike.maintenanceSchedule.nextCheckSlot && bike.stationId !== null && bike.condition === 'healthy') {
+        // Check if any component needs preventive maintenance
+        const ch = bike.componentHealth;
+        if (ch && (ch.chain < 0.4 || ch.brake < 0.35 || ch.tire < 0.3)) {
+          // Schedule preventive maintenance
+          const minSlots = this.scenario.bikeHealth.minRepairSlots ?? 15;
+          const maxSlots = this.scenario.bikeHealth.maxRepairSlots ?? 60;
+          const severity = 1 - Math.min(ch.chain, ch.brake, ch.tire);
+          const repairDuration = Math.round(minSlots + severity * (maxSlots - minSlots));
+
+          this.setBikeCondition(bike, 'maintenance');
+          bike.recoveryReadySlot = slotIndex + repairDuration;
+          bike.repairSlotsRemaining = repairDuration;
+          bike.maintenanceSchedule.nextCheckSlot = slotIndex + bike.maintenanceSchedule.checkIntervalSlots;
+          continue;
+        }
+        // No maintenance needed, schedule next check
+        bike.maintenanceSchedule.nextCheckSlot = slotIndex + bike.maintenanceSchedule.checkIntervalSlots;
+      }
+
       if (bike.condition === 'recovery' && bike.recoveryReadySlot !== null && slotIndex >= bike.recoveryReadySlot) {
         this.setBikeCondition(bike, 'healthy');
         bike.recoveryReadySlot = null;
+        bike.repairSlotsRemaining = null;
+        // Restore component health after repair
+        if (bike.componentHealth) {
+          bike.componentHealth.chain = clamp(bike.componentHealth.chain + 0.3, 0.5, 0.95);
+          bike.componentHealth.brake = clamp(bike.componentHealth.brake + 0.35, 0.55, 0.95);
+          bike.componentHealth.tire = clamp(bike.componentHealth.tire + 0.25, 0.5, 0.9);
+        }
+        this.totalRepairsCompleted++;
         continue;
       }
 
@@ -497,6 +566,72 @@ export class StationStateManagerV2 {
         bike.health = clamp(bike.health + 0.28, 0.52, 0.9);
         this.totalRepairsCompleted++;
       }
+    }
+  }
+
+  getBikeHealth(bikeId: string): number | undefined {
+    const idx = this.bikeIdToIndex.get(bikeId);
+    if (idx === undefined) return undefined;
+    return this.bikes[idx]?.health;
+  }
+
+  getAvailableCount(stationId: number): number {
+    return this.counters[stationId]?.available ?? 0;
+  }
+
+  /** Get effective capacity for a station (total docks minus faulted) */
+  getEffectiveCapacity(stationId: number): number {
+    return this.dockStates[stationId]?.effectiveCapacity ?? STATIONS[stationId]?.capacity ?? 0;
+  }
+
+  /** Get faulted dock count for a station */
+  getFaultedDockCount(stationId: number): number {
+    return this.dockStates[stationId]?.faultedDocks.length ?? 0;
+  }
+
+  /** Process dock faults: random failures, weather damage, overnight repairs */
+  processDockFaults(slotIndex: number, weather: string): void {
+    for (let stationId = 0; stationId < STATIONS.length; stationId++) {
+      const dockState = this.dockStates[stationId];
+      if (!dockState) continue;
+
+      // 1. Repair completed faults
+      dockState.faultedDocks = dockState.faultedDocks.filter(
+        (fault) => slotIndex < fault.repairReadySlot
+      );
+
+      // 2. Random dock failures (base rate: 0.1% per dock per slot)
+      const baseFaultRate = 0.001;
+      const weatherMultiplier = weather === 'storm' ? 3.0 : weather === 'rain' ? 1.8 : weather === 'cold_front' ? 1.3 : 1.0;
+      const faultRate = baseFaultRate * weatherMultiplier;
+
+      const healthyDocks = dockState.totalDocks - dockState.faultedDocks.length;
+      for (let d = 0; d < healthyDocks; d++) {
+        if (random() < faultRate) {
+          // Dock fails - repair time depends on severity
+          const repairSlots = 30 + Math.floor(random() * 90); // 30-120 minutes
+          dockState.faultedDocks.push({
+            dockIndex: d,
+            faultSlot: slotIndex,
+            repairReadySlot: slotIndex + repairSlots,
+          });
+        }
+      }
+
+      // 3. Overnight maintenance window (2:00-5:00 AM, slots 120-300)
+      if (slotIndex >= 120 && slotIndex <= 300 && slotIndex - dockState.lastMaintenanceSlot >= 60) {
+        // Repair up to 3 faulted docks during maintenance
+        const toRepair = Math.min(3, dockState.faultedDocks.length);
+        if (toRepair > 0) {
+          // Sort by oldest fault first
+          dockState.faultedDocks.sort((a, b) => a.faultSlot - b.faultSlot);
+          dockState.faultedDocks.splice(0, toRepair);
+          dockState.lastMaintenanceSlot = slotIndex;
+        }
+      }
+
+      // 4. Update effective capacity
+      dockState.effectiveCapacity = dockState.totalDocks - dockState.faultedDocks.length;
     }
   }
 
@@ -557,7 +692,8 @@ export class StationStateManagerV2 {
       }
 
       const occupied = this.counters[candidateId]?.docked ?? 0;
-      const space = Math.max(0, STATIONS[candidateId].capacity - occupied);
+      const effectiveCap = this.getEffectiveCapacity(candidateId);
+      const space = Math.max(0, effectiveCap - occupied);
       if (space <= 0) {
         continue;
       }
@@ -677,6 +813,17 @@ export class StationStateManagerV2 {
         health,
         recoveryReadySlot: null,
         tripCount: 0,
+        componentHealth: {
+          chain: 0.7 + random() * 0.3,
+          brake: 0.75 + random() * 0.25,
+          tire: 0.8 + random() * 0.2,
+        },
+        maintenanceSchedule: {
+          nextCheckSlot: Math.floor(random() * 480),
+          checkIntervalSlots: this.scenario.bikeHealth.preventiveCheckInterval ?? 480,
+        },
+        ageSlots: 0,
+        repairSlotsRemaining: null,
       };
       this.bikes.push(bike);
       // Update counters directly (bike is already set up)
@@ -697,6 +844,13 @@ export class StationStateManagerV2 {
     for (let idx = 0; idx < this.bikes.length; idx++) {
       this.bikeIdToIndex.set(this.bikes[idx].id, idx);
     }
+    // Initialize dock states
+    this.dockStates = STATIONS.map((station) => ({
+      totalDocks: station.capacity,
+      faultedDocks: [],
+      effectiveCapacity: station.capacity,
+      lastMaintenanceSlot: 0,
+    }));
     this.beginSlot(0);
   }
 

@@ -2,6 +2,8 @@ use bike_core::{DispatchVehicle, RouteStop, StationId, StopAction, VehicleRoute}
 
 use crate::greedy::MoveOrder;
 
+const MAX_ROUTE_DURATION_MINUTES: f64 = 45.0;
+
 /// A stop to visit: either pick up or drop off bikes.
 #[derive(Debug, Clone)]
 struct VrpStop {
@@ -106,6 +108,76 @@ pub(crate) fn optimize_routes(
         }
     }
 
+    // ── Max route duration constraint: trim routes that exceed the limit ──
+    for route in &mut routes {
+        if route.estimated_duration_minutes > MAX_ROUTE_DURATION_MINUTES && route.stops.len() > 2 {
+            while route.estimated_duration_minutes > MAX_ROUTE_DURATION_MINUTES && route.stops.len() > 2 {
+                route.stops.pop();
+                // Recalculate distance and duration from remaining stops
+                let (dist, dur) = recalculate_route_metrics(&route.stops, distance_matrix);
+                route.total_distance_meters = dist;
+                route.estimated_duration_minutes = dur;
+            }
+        }
+    }
+
+    // ── Route duration balancing ──
+    // If the longest route is more than 2x the shortest, move the last stop
+    // from the longest to the shortest (only if it improves balance).
+    if routes.len() >= 2 {
+        let (longest_idx, shortest_idx) = {
+            let mut longest = 0;
+            let mut shortest = 0;
+            for (i, route) in routes.iter().enumerate() {
+                if route.estimated_duration_minutes > routes[longest].estimated_duration_minutes {
+                    longest = i;
+                }
+                if route.estimated_duration_minutes < routes[shortest].estimated_duration_minutes {
+                    shortest = i;
+                }
+            }
+            (longest, shortest)
+        };
+
+        if longest_idx != shortest_idx
+            && routes[longest_idx].estimated_duration_minutes
+                > 2.0 * routes[shortest_idx].estimated_duration_minutes
+            && routes[longest_idx].stops.len() > 1
+        {
+            let old_longest_dur = routes[longest_idx].estimated_duration_minutes;
+            let old_shortest_dur = routes[shortest_idx].estimated_duration_minutes;
+            let old_ratio = old_longest_dur / old_shortest_dur.max(0.01);
+
+            let moved_stop = routes[longest_idx].stops.pop().unwrap();
+            let (ld, lt) = recalculate_route_metrics(&routes[longest_idx].stops, distance_matrix);
+            routes[longest_idx].total_distance_meters = ld;
+            routes[longest_idx].estimated_duration_minutes = lt;
+
+            routes[shortest_idx].stops.push(moved_stop);
+            let (sd, st) = recalculate_route_metrics(&routes[shortest_idx].stops, distance_matrix);
+            routes[shortest_idx].total_distance_meters = sd;
+            routes[shortest_idx].estimated_duration_minutes = st;
+
+            let new_longest_dur = routes[longest_idx].estimated_duration_minutes
+                .max(routes[shortest_idx].estimated_duration_minutes);
+            let new_shortest_dur = routes[longest_idx].estimated_duration_minutes
+                .min(routes[shortest_idx].estimated_duration_minutes);
+            let new_ratio = new_longest_dur / new_shortest_dur.max(0.01);
+
+            // Revert if balance didn't improve
+            if new_ratio >= old_ratio {
+                let moved_back = routes[shortest_idx].stops.pop().unwrap();
+                routes[longest_idx].stops.push(moved_back);
+                let (ld2, lt2) = recalculate_route_metrics(&routes[longest_idx].stops, distance_matrix);
+                routes[longest_idx].total_distance_meters = ld2;
+                routes[longest_idx].estimated_duration_minutes = lt2;
+                let (sd2, st2) = recalculate_route_metrics(&routes[shortest_idx].stops, distance_matrix);
+                routes[shortest_idx].total_distance_meters = sd2;
+                routes[shortest_idx].estimated_duration_minutes = st2;
+            }
+        }
+    }
+
     routes
 }
 
@@ -188,7 +260,9 @@ fn build_single_route(
     }
 
     let avg_speed_mps = 5.0; // ~18 km/h campus vehicle
-    let estimated_minutes = (total_distance / avg_speed_mps) / 60.0;
+    let service_time_per_stop_minutes = 2.0; // 2 minutes per stop for positioning
+    let estimated_minutes = (total_distance / avg_speed_mps) / 60.0
+        + route_stops.len() as f64 * service_time_per_stop_minutes;
 
     VehicleRoute {
         vehicle_id: vehicle.id,
@@ -197,6 +271,29 @@ fn build_single_route(
         total_distance_meters: total_distance,
         estimated_duration_minutes: estimated_minutes,
     }
+}
+
+/// Recalculate total distance and estimated duration from a list of RouteStops.
+/// Uses station_id.0 as the station index for distance_matrix lookups.
+fn recalculate_route_metrics(stops: &[RouteStop], distance_matrix: &[Vec<f64>]) -> (f64, f64) {
+    let mut total_distance = 0.0;
+    let mut prev_index: Option<usize> = None;
+    for stop in stops {
+        let idx = stop.station_id.0 as usize;
+        if let Some(prev) = prev_index {
+            total_distance += distance_matrix
+                .get(prev)
+                .and_then(|row| row.get(idx))
+                .copied()
+                .unwrap_or(0.0);
+        }
+        prev_index = Some(idx);
+    }
+    let avg_speed_mps = 5.0;
+    let service_time_per_stop_minutes = 2.0;
+    let estimated_minutes = (total_distance / avg_speed_mps) / 60.0
+        + stops.len() as f64 * service_time_per_stop_minutes;
+    (total_distance, estimated_minutes)
 }
 
 /// Sort stops in-place using nearest-neighbor heuristic.

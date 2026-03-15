@@ -43,6 +43,14 @@ export type BikeCondition =
   | 'recovery'
   | 'in_transit';
 
+/** Continuous weather state for realistic interpolation */
+export interface WeatherState {
+  temperature: number;      // Celsius
+  windSpeed: number;        // m/s
+  windDirection: number;    // degrees 0-360
+  humidity: number;         // 0-1
+}
+
 export interface WeatherWindow {
   startSlot: number;
   endSlot: number;
@@ -52,6 +60,8 @@ export interface WeatherWindow {
   travelTimeMultiplier: number;
   healthWearMultiplier: number;
   shortTripBoost: number;
+  weatherState?: WeatherState;
+  transitionDurationSlots?: number;
 }
 
 export interface EnvironmentEvent {
@@ -96,6 +106,21 @@ export interface RiderAgentProfile {
   activityWindows: RiderActivityWindow[];
 }
 
+/** Component-level health tracking for individual bike parts */
+export interface BikeComponentHealth {
+  chain: number;    // 0-1, chain condition
+  brake: number;    // 0-1, brake condition
+  tire: number;     // 0-1, tire condition
+}
+
+/** Preventive maintenance schedule entry */
+export interface PreventiveMaintenanceSchedule {
+  /** Slot index when next preventive check is due */
+  nextCheckSlot: number;
+  /** Interval in slots between preventive checks */
+  checkIntervalSlots: number;
+}
+
 export interface BikeHealthProfile {
   failureThreshold: number;
   outageThreshold: number;
@@ -103,6 +128,12 @@ export interface BikeHealthProfile {
   rainWearMultiplier: number;
   repairProbabilityPerSlot: number;
   recoverySlots: number;
+  chainWearRate?: number;      // per-km chain wear (default 0.04)
+  brakeWearRate?: number;      // per-km brake wear (default 0.03)
+  tireWearRate?: number;       // per-km tire wear (default 0.025)
+  preventiveCheckInterval?: number;  // slots between preventive checks (default 480 = 8 hours)
+  minRepairSlots?: number;     // minimum repair duration (default 15)
+  maxRepairSlots?: number;     // maximum repair duration (default 60)
 }
 
 export interface ScenarioSyntheticCorpus {
@@ -141,6 +172,12 @@ export interface BikeAsset {
   recoveryReadySlot: number | null;
   /** Total trips this bike has completed (drives non-linear degradation). */
   tripCount: number;
+  componentHealth?: BikeComponentHealth;
+  maintenanceSchedule?: PreventiveMaintenanceSchedule;
+  /** Age in total slots since creation, drives accelerated wear */
+  ageSlots?: number;
+  /** Variable repair duration (slots remaining) */
+  repairSlotsRemaining?: number | null;
 }
 
 export interface ActiveRideV2 {
@@ -162,6 +199,23 @@ export interface ActiveRideV2 {
   isOverflow?: boolean;
 }
 
+/** Individual dock fault state */
+export interface DockFaultEntry {
+  dockIndex: number;
+  faultSlot: number;       // when the fault occurred
+  repairReadySlot: number; // when it will be repaired
+}
+
+/** Per-station dock health tracking */
+export interface StationDockState {
+  totalDocks: number;
+  faultedDocks: DockFaultEntry[];
+  /** Effective capacity = totalDocks - faultedDocks.length */
+  effectiveCapacity: number;
+  /** Last maintenance window slot */
+  lastMaintenanceSlot: number;
+}
+
 export interface StationStateV2 {
   stationId: number;
   availableBikes: number;
@@ -173,6 +227,8 @@ export interface StationStateV2 {
   recentUnmetDemand: number;
   temporaryHeat: number;
   pressureIndex: number;
+  faultedDockCount?: number;
+  effectiveCapacity?: number;
 }
 
 export type FailureReasonCounts = Record<FailureReason, number>;
@@ -186,6 +242,10 @@ export interface SlotEnvironmentContext {
   travelTimeMultiplier: number;
   shortTripBoost: number;
   categoryDemandBoost: Partial<Record<StationCategory, number>>;
+  weatherState?: WeatherState;
+  temperature?: number;
+  windSpeed?: number;
+  humidity?: number;
 }
 
 export interface SimulationSnapshotV2 {

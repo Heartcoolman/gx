@@ -11,6 +11,8 @@ export interface PredictedDemand {
   pickups: number;
   returns: number;
   net_flow: number;
+  confidence_low: number;
+  confidence_high: number;
 }
 
 export interface TargetInventory {

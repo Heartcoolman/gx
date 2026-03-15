@@ -21,6 +21,8 @@ pub struct PredictDemandResp {
     pub pickups: f64,
     pub returns: f64,
     pub net_flow: f64,
+    pub confidence_low: f64,
+    pub confidence_high: f64,
 }
 
 #[derive(Deserialize)]
@@ -92,6 +94,9 @@ pub struct CycleReq {
     /// Current block rate (0.0–1.0) for adaptive congestion response.
     #[serde(default)]
     pub block_rate: f64,
+    /// Current weather condition (e.g. "rain", "storm", "cold_front")
+    #[serde(default)]
+    pub weather: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -114,6 +119,8 @@ pub async fn predict_demand(
         pickups: demand.pickups,
         returns: demand.returns,
         net_flow: demand.net_flow,
+        confidence_low: demand.confidence_low,
+        confidence_high: demand.confidence_high,
     }))
 }
 
@@ -132,6 +139,8 @@ pub async fn predict_demand_batch(
                 pickups: demand.pickups,
                 returns: demand.returns,
                 net_flow: demand.net_flow,
+                confidence_low: demand.confidence_low,
+                confidence_high: demand.confidence_high,
             }
         })
         .collect();
@@ -361,13 +370,16 @@ pub async fn rebalance_cycle(
         })
         .collect();
 
+    let mut solve_config = config.clone();
+    solve_config.weather = req.weather;
+
     let input = RebalanceInput {
         stations: req.stations,
         current_status: req.current_status,
         targets: target_pairs,
         distance_matrix: req.distance_matrix,
         vehicles: req.vehicles,
-        config: config.clone(),
+        config: solve_config,
     };
     let output = state.solver.solve(&input);
 

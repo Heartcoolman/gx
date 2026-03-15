@@ -113,6 +113,10 @@ pub struct PredictedDemand {
     pub pickups: f64,
     pub returns: f64,
     pub net_flow: f64,
+    #[serde(default)]
+    pub confidence_low: f64,
+    #[serde(default)]
+    pub confidence_high: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

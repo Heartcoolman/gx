@@ -5,6 +5,7 @@ import type {
   RiderAgentProfile,
   ScenarioBundle,
   ScenarioPackage,
+  WeatherState,
   WeatherWindow,
 } from '../types/scenario';
 import type { DayKind } from '../types/time';
@@ -14,38 +15,137 @@ function hotness(defaultValue: number, overrides: Record<number, number>): numbe
   return STATIONS.map((station) => overrides[station.id] ?? defaultValue);
 }
 
-function makeWeatherTimeline(kind: 'clear' | 'rainy' | 'exam_rain' | 'festival' | 'weekend'): WeatherWindow[] {
+function makeWeatherTimeline(kind: 'clear' | 'rainy' | 'exam_rain' | 'festival' | 'weekend' | 'summer_heat' | 'opening_day' | 'night_study' | 'sports_day'): WeatherWindow[] {
   if (kind === 'rainy') {
     return [
-      { startSlot: 0, endSlot: 419, weather: 'cloudy', label: '清晨多云', demandMultiplier: 0.95, travelTimeMultiplier: 1.02, healthWearMultiplier: 1.0, shortTripBoost: 1.02 },
-      { startSlot: 420, endSlot: 1154, weather: 'rain', label: '日间降雨', demandMultiplier: 0.76, travelTimeMultiplier: 1.18, healthWearMultiplier: 1.55, shortTripBoost: 1.15 },
-      { startSlot: 1155, endSlot: 1439, weather: 'cold_front', label: '夜间寒潮', demandMultiplier: 0.82, travelTimeMultiplier: 1.1, healthWearMultiplier: 1.35, shortTripBoost: 1.08 },
+      { startSlot: 0, endSlot: 419, weather: 'cloudy', label: '清晨多云', demandMultiplier: 0.95, travelTimeMultiplier: 1.02, healthWearMultiplier: 1.0, shortTripBoost: 1.02, transitionDurationSlots: 30, weatherState: { temperature: 16, windSpeed: 3.5, windDirection: 120, humidity: 0.78 } },
+      { startSlot: 420, endSlot: 1154, weather: 'rain', label: '日间降雨', demandMultiplier: 0.76, travelTimeMultiplier: 1.18, healthWearMultiplier: 1.55, shortTripBoost: 1.15, transitionDurationSlots: 30, weatherState: { temperature: 14, windSpeed: 5.0, windDirection: 135, humidity: 0.92 } },
+      { startSlot: 1155, endSlot: 1439, weather: 'cold_front', label: '夜间寒潮', demandMultiplier: 0.82, travelTimeMultiplier: 1.1, healthWearMultiplier: 1.35, shortTripBoost: 1.08, transitionDurationSlots: 30, weatherState: { temperature: 8, windSpeed: 6.5, windDirection: 350, humidity: 0.70 } },
     ];
   }
   if (kind === 'exam_rain') {
     return [
-      { startSlot: 0, endSlot: 479, weather: 'cloudy', label: '阴天备考', demandMultiplier: 0.92, travelTimeMultiplier: 1.03, healthWearMultiplier: 1.05, shortTripBoost: 1.03 },
-      { startSlot: 480, endSlot: 1034, weather: 'rain', label: '午后阵雨', demandMultiplier: 0.8, travelTimeMultiplier: 1.15, healthWearMultiplier: 1.45, shortTripBoost: 1.12 },
-      { startSlot: 1035, endSlot: 1439, weather: 'cloudy', label: '夜间阴凉', demandMultiplier: 0.88, travelTimeMultiplier: 1.06, healthWearMultiplier: 1.1, shortTripBoost: 1.05 },
+      { startSlot: 0, endSlot: 479, weather: 'cloudy', label: '阴天备考', demandMultiplier: 0.92, travelTimeMultiplier: 1.03, healthWearMultiplier: 1.05, shortTripBoost: 1.03, transitionDurationSlots: 30, weatherState: { temperature: 17, windSpeed: 2.8, windDirection: 150, humidity: 0.72 } },
+      { startSlot: 480, endSlot: 1034, weather: 'rain', label: '午后阵雨', demandMultiplier: 0.8, travelTimeMultiplier: 1.15, healthWearMultiplier: 1.45, shortTripBoost: 1.12, transitionDurationSlots: 30, weatherState: { temperature: 15, windSpeed: 4.2, windDirection: 140, humidity: 0.88 } },
+      { startSlot: 1035, endSlot: 1439, weather: 'cloudy', label: '夜间阴凉', demandMultiplier: 0.88, travelTimeMultiplier: 1.06, healthWearMultiplier: 1.1, shortTripBoost: 1.05, transitionDurationSlots: 30, weatherState: { temperature: 13, windSpeed: 2.5, windDirection: 160, humidity: 0.68 } },
     ];
   }
   if (kind === 'festival') {
     return [
-      { startSlot: 0, endSlot: 1439, weather: 'clear', label: '活动日晴朗', demandMultiplier: 1.08, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.0, shortTripBoost: 1.02 },
+      { startSlot: 0, endSlot: 1439, weather: 'clear', label: '活动日晴朗', demandMultiplier: 1.08, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.0, shortTripBoost: 1.02, transitionDurationSlots: 30, weatherState: { temperature: 24, windSpeed: 1.8, windDirection: 210, humidity: 0.48 } },
     ];
   }
   if (kind === 'weekend') {
     return [
-      { startSlot: 0, endSlot: 539, weather: 'clear', label: '周末清晨', demandMultiplier: 0.82, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.0, shortTripBoost: 1.0 },
-      { startSlot: 540, endSlot: 1154, weather: 'clear', label: '周末午后', demandMultiplier: 1.04, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.0, shortTripBoost: 1.02 },
-      { startSlot: 1155, endSlot: 1439, weather: 'cloudy', label: '周末夜晚', demandMultiplier: 0.92, travelTimeMultiplier: 1.04, healthWearMultiplier: 1.03, shortTripBoost: 1.03 },
+      { startSlot: 0, endSlot: 539, weather: 'clear', label: '周末清晨', demandMultiplier: 0.82, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.0, shortTripBoost: 1.0, transitionDurationSlots: 30, weatherState: { temperature: 19, windSpeed: 1.0, windDirection: 180, humidity: 0.52 } },
+      { startSlot: 540, endSlot: 1154, weather: 'clear', label: '周末午后', demandMultiplier: 1.04, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.0, shortTripBoost: 1.02, transitionDurationSlots: 30, weatherState: { temperature: 27, windSpeed: 2.2, windDirection: 220, humidity: 0.45 } },
+      { startSlot: 1155, endSlot: 1439, weather: 'cloudy', label: '周末夜晚', demandMultiplier: 0.92, travelTimeMultiplier: 1.04, healthWearMultiplier: 1.03, shortTripBoost: 1.03, transitionDurationSlots: 30, weatherState: { temperature: 21, windSpeed: 1.5, windDirection: 200, humidity: 0.58 } },
+    ];
+  }
+  if (kind === 'summer_heat') {
+    return [
+      { startSlot: 0, endSlot: 359, weather: 'clear', label: '清晨微凉', demandMultiplier: 0.88, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.1, shortTripBoost: 1.0,
+        weatherState: { temperature: 26, windSpeed: 0.8, windDirection: 180, humidity: 0.65 }, transitionDurationSlots: 30 },
+      { startSlot: 360, endSlot: 659, weather: 'clear', label: '上午炎热', demandMultiplier: 0.82, travelTimeMultiplier: 1.05, healthWearMultiplier: 1.2, shortTripBoost: 1.1,
+        weatherState: { temperature: 33, windSpeed: 1.2, windDirection: 200, humidity: 0.58 }, transitionDurationSlots: 30 },
+      { startSlot: 660, endSlot: 959, weather: 'clear', label: '午后酷暑', demandMultiplier: 0.65, travelTimeMultiplier: 1.12, healthWearMultiplier: 1.35, shortTripBoost: 1.2,
+        weatherState: { temperature: 38, windSpeed: 0.5, windDirection: 210, humidity: 0.50 }, transitionDurationSlots: 30 },
+      { startSlot: 960, endSlot: 1199, weather: 'clear', label: '傍晚回凉', demandMultiplier: 1.15, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.1, shortTripBoost: 1.05,
+        weatherState: { temperature: 30, windSpeed: 2.0, windDirection: 190, humidity: 0.55 }, transitionDurationSlots: 30 },
+      { startSlot: 1200, endSlot: 1439, weather: 'clear', label: '夜间舒适', demandMultiplier: 1.08, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.0, shortTripBoost: 1.02,
+        weatherState: { temperature: 27, windSpeed: 1.5, windDirection: 180, humidity: 0.60 }, transitionDurationSlots: 30 },
+    ];
+  }
+  if (kind === 'opening_day') {
+    return [
+      { startSlot: 0, endSlot: 419, weather: 'clear', label: '开学清晨', demandMultiplier: 1.15, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.0, shortTripBoost: 1.0,
+        weatherState: { temperature: 22, windSpeed: 1.5, windDirection: 180, humidity: 0.50 }, transitionDurationSlots: 30 },
+      { startSlot: 420, endSlot: 719, weather: 'clear', label: '报到高峰', demandMultiplier: 1.45, travelTimeMultiplier: 1.08, healthWearMultiplier: 1.05, shortTripBoost: 1.0,
+        weatherState: { temperature: 28, windSpeed: 2.0, windDirection: 200, humidity: 0.48 }, transitionDurationSlots: 30 },
+      { startSlot: 720, endSlot: 1079, weather: 'clear', label: '午后探索', demandMultiplier: 1.30, travelTimeMultiplier: 1.05, healthWearMultiplier: 1.0, shortTripBoost: 1.05,
+        weatherState: { temperature: 30, windSpeed: 1.8, windDirection: 210, humidity: 0.45 }, transitionDurationSlots: 30 },
+      { startSlot: 1080, endSlot: 1439, weather: 'cloudy', label: '夜间安顿', demandMultiplier: 0.95, travelTimeMultiplier: 1.02, healthWearMultiplier: 1.0, shortTripBoost: 1.02,
+        weatherState: { temperature: 24, windSpeed: 1.2, windDirection: 190, humidity: 0.55 }, transitionDurationSlots: 30 },
+    ];
+  }
+  if (kind === 'night_study') {
+    return [
+      { startSlot: 0, endSlot: 539, weather: 'clear', label: '白天正常', demandMultiplier: 0.90, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.0, shortTripBoost: 1.0,
+        weatherState: { temperature: 20, windSpeed: 1.5, windDirection: 180, humidity: 0.52 }, transitionDurationSlots: 30 },
+      { startSlot: 540, endSlot: 1079, weather: 'clear', label: '午后平稳', demandMultiplier: 0.95, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.0, shortTripBoost: 1.0,
+        weatherState: { temperature: 24, windSpeed: 1.8, windDirection: 200, humidity: 0.48 }, transitionDurationSlots: 30 },
+      { startSlot: 1080, endSlot: 1319, weather: 'cloudy', label: '夜间自习高峰', demandMultiplier: 1.25, travelTimeMultiplier: 1.04, healthWearMultiplier: 1.05, shortTripBoost: 1.08,
+        weatherState: { temperature: 18, windSpeed: 1.0, windDirection: 190, humidity: 0.58 }, transitionDurationSlots: 30 },
+      { startSlot: 1320, endSlot: 1439, weather: 'cloudy', label: '深夜回宿舍', demandMultiplier: 1.10, travelTimeMultiplier: 1.06, healthWearMultiplier: 1.08, shortTripBoost: 1.05,
+        weatherState: { temperature: 16, windSpeed: 0.8, windDirection: 180, humidity: 0.62 }, transitionDurationSlots: 30 },
+    ];
+  }
+  if (kind === 'sports_day') {
+    return [
+      { startSlot: 0, endSlot: 479, weather: 'clear', label: '赛前准备', demandMultiplier: 1.05, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.0, shortTripBoost: 1.0,
+        weatherState: { temperature: 22, windSpeed: 2.0, windDirection: 180, humidity: 0.50 }, transitionDurationSlots: 30 },
+      { startSlot: 480, endSlot: 719, weather: 'clear', label: '上午赛事', demandMultiplier: 1.35, travelTimeMultiplier: 1.06, healthWearMultiplier: 1.05, shortTripBoost: 1.0,
+        weatherState: { temperature: 26, windSpeed: 2.5, windDirection: 200, humidity: 0.45 }, transitionDurationSlots: 30 },
+      { startSlot: 720, endSlot: 1019, weather: 'clear', label: '午间休息', demandMultiplier: 1.10, travelTimeMultiplier: 1.02, healthWearMultiplier: 1.0, shortTripBoost: 1.05,
+        weatherState: { temperature: 28, windSpeed: 2.0, windDirection: 210, humidity: 0.48 }, transitionDurationSlots: 30 },
+      { startSlot: 1020, endSlot: 1259, weather: 'clear', label: '下午决赛', demandMultiplier: 1.45, travelTimeMultiplier: 1.08, healthWearMultiplier: 1.1, shortTripBoost: 1.0,
+        weatherState: { temperature: 27, windSpeed: 2.2, windDirection: 200, humidity: 0.50 }, transitionDurationSlots: 30 },
+      { startSlot: 1260, endSlot: 1439, weather: 'cloudy', label: '赛后散场', demandMultiplier: 1.20, travelTimeMultiplier: 1.04, healthWearMultiplier: 1.05, shortTripBoost: 1.02,
+        weatherState: { temperature: 23, windSpeed: 1.5, windDirection: 190, humidity: 0.55 }, transitionDurationSlots: 30 },
     ];
   }
   return [
-    { startSlot: 0, endSlot: 479, weather: 'clear', label: '清晨晴朗', demandMultiplier: 0.96, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.0, shortTripBoost: 1.0 },
-    { startSlot: 480, endSlot: 1154, weather: 'clear', label: '白天舒适', demandMultiplier: 1.05, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.0, shortTripBoost: 1.0 },
-    { startSlot: 1155, endSlot: 1439, weather: 'cloudy', label: '夜间微凉', demandMultiplier: 0.9, travelTimeMultiplier: 1.03, healthWearMultiplier: 1.05, shortTripBoost: 1.04 },
+    { startSlot: 0, endSlot: 479, weather: 'clear', label: '清晨晴朗', demandMultiplier: 0.96, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.0, shortTripBoost: 1.0, transitionDurationSlots: 30, weatherState: { temperature: 18, windSpeed: 1.5, windDirection: 180, humidity: 0.55 } },
+    { startSlot: 480, endSlot: 1154, weather: 'clear', label: '白天舒适', demandMultiplier: 1.05, travelTimeMultiplier: 1.0, healthWearMultiplier: 1.0, shortTripBoost: 1.0, transitionDurationSlots: 30, weatherState: { temperature: 26, windSpeed: 2.0, windDirection: 200, humidity: 0.50 } },
+    { startSlot: 1155, endSlot: 1439, weather: 'cloudy', label: '夜间微凉', demandMultiplier: 0.9, travelTimeMultiplier: 1.03, healthWearMultiplier: 1.05, shortTripBoost: 1.04, transitionDurationSlots: 30, weatherState: { temperature: 20, windSpeed: 1.2, windDirection: 190, humidity: 0.60 } },
   ];
+}
+
+const DEFAULT_WEATHER_STATE: WeatherState = { temperature: 20, windSpeed: 1.5, windDirection: 180, humidity: 0.55 };
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+function lerpAngle(a: number, b: number, t: number): number {
+  let diff = ((b - a + 540) % 360) - 180;
+  return ((a + diff * t) % 360 + 360) % 360;
+}
+
+function lerpWeatherState(a: WeatherState, b: WeatherState, t: number): WeatherState {
+  return {
+    temperature: lerp(a.temperature, b.temperature, t),
+    windSpeed: lerp(a.windSpeed, b.windSpeed, t),
+    windDirection: lerpAngle(a.windDirection, b.windDirection, t),
+    humidity: lerp(a.humidity, b.humidity, t),
+  };
+}
+
+export function interpolateWeatherState(slotIndex: number, weatherTimeline: WeatherWindow[]): WeatherState {
+  if (weatherTimeline.length === 0) return DEFAULT_WEATHER_STATE;
+
+  // Find the current window
+  const currentIdx = weatherTimeline.findIndex(
+    (w) => slotIndex >= w.startSlot && slotIndex <= w.endSlot,
+  );
+  if (currentIdx < 0) return weatherTimeline[0].weatherState ?? DEFAULT_WEATHER_STATE;
+
+  const current = weatherTimeline[currentIdx];
+  const currentState = current.weatherState ?? DEFAULT_WEATHER_STATE;
+  const transitionSlots = current.transitionDurationSlots ?? 0;
+
+  // If we're in a transition zone at the start of this window, interpolate from previous
+  if (transitionSlots > 0 && currentIdx > 0) {
+    const slotsIntoWindow = slotIndex - current.startSlot;
+    if (slotsIntoWindow < transitionSlots) {
+      const prev = weatherTimeline[currentIdx - 1];
+      const prevState = prev.weatherState ?? DEFAULT_WEATHER_STATE;
+      const t = slotsIntoWindow / transitionSlots;
+      return lerpWeatherState(prevState, currentState, t);
+    }
+  }
+
+  return currentState;
 }
 
 function makeEvents(kind: ScenarioPackage['id']): EnvironmentEvent[] {
@@ -131,6 +231,110 @@ function makeEvents(kind: ScenarioPackage['id']): EnvironmentEvent[] {
       destinationBoost: { sports_field: 1.32, cafeteria: 1.12 },
       pressureBoost: { sports_field: 0.24, cafeteria: 0.1 },
     });
+  }
+
+  if (kind === 'weekday-spring' || kind === 'rainy-commute') {
+    base.push({
+      id: `${kind}-afternoon-class`,
+      label: '下午换课潮',
+      type: 'lecture_peak',
+      startSlot: 840,
+      endSlot: 914,
+      demandMultiplier: 1.18,
+      travelTimeMultiplier: 1.04,
+      affectedCategories: ['academic_building', 'dormitory'],
+      destinationBoost: { academic_building: 1.18 },
+      pressureBoost: { academic_building: 0.16, dormitory: 0.10 },
+    });
+  }
+
+  if (kind === 'rainy-commute') {
+    base.push({
+      id: `${kind}-dinner-rush`,
+      label: '雨天晚餐高峰',
+      type: 'cafeteria_surge',
+      startSlot: 1020,
+      endSlot: 1109,
+      demandMultiplier: 1.22,
+      travelTimeMultiplier: 1.08,
+      affectedCategories: ['cafeteria', 'dormitory', 'academic_building'],
+      destinationBoost: { cafeteria: 1.28, dormitory: 1.12 },
+      pressureBoost: { cafeteria: 0.18, dormitory: 0.10 },
+    });
+  }
+
+  if (kind === 'summer-heat') {
+    base.push({
+      id: `${kind}-heat-wave`,
+      label: '午后热浪',
+      type: 'campus_festival',
+      startSlot: 720,
+      endSlot: 960,
+      demandMultiplier: 0.60,
+      travelTimeMultiplier: 1.15,
+      affectedCategories: ['sports_field', 'main_gate'],
+      destinationBoost: { library: 1.30, dormitory: 1.20 },
+      pressureBoost: { library: 0.25, dormitory: 0.15 },
+    });
+  }
+
+  if (kind === 'opening-day') {
+    base.push({
+      id: `${kind}-registration`,
+      label: '新生报到潮',
+      type: 'campus_festival',
+      startSlot: 420,
+      endSlot: 720,
+      demandMultiplier: 1.50,
+      travelTimeMultiplier: 1.10,
+      affectedCategories: ['main_gate', 'dormitory', 'cafeteria'],
+      destinationBoost: { dormitory: 1.40, cafeteria: 1.25, main_gate: 1.30 },
+      pressureBoost: { dormitory: 0.30, main_gate: 0.25, cafeteria: 0.15 },
+    });
+  }
+
+  if (kind === 'night-study') {
+    base.push({
+      id: `${kind}-night-rush`,
+      label: '夜间自习潮',
+      type: 'exam_pressure',
+      startSlot: 1080,
+      endSlot: 1320,
+      demandMultiplier: 1.30,
+      travelTimeMultiplier: 1.04,
+      affectedCategories: ['library', 'academic_building', 'dormitory'],
+      destinationBoost: { library: 1.35, academic_building: 1.20 },
+      pressureBoost: { library: 0.28, academic_building: 0.15 },
+    });
+  }
+
+  if (kind === 'sports-tournament') {
+    base.push(
+      {
+        id: `${kind}-morning-events`,
+        label: '上午赛事',
+        type: 'sports_event',
+        startSlot: 480,
+        endSlot: 720,
+        demandMultiplier: 1.40,
+        travelTimeMultiplier: 1.06,
+        affectedCategories: ['sports_field', 'dormitory', 'cafeteria'],
+        destinationBoost: { sports_field: 1.45, cafeteria: 1.15 },
+        pressureBoost: { sports_field: 0.35, cafeteria: 0.12 },
+      },
+      {
+        id: `${kind}-finals`,
+        label: '下午决赛',
+        type: 'sports_event',
+        startSlot: 1020,
+        endSlot: 1260,
+        demandMultiplier: 1.55,
+        travelTimeMultiplier: 1.08,
+        affectedCategories: ['sports_field', 'main_gate', 'cafeteria'],
+        destinationBoost: { sports_field: 1.55, main_gate: 1.30 },
+        pressureBoost: { sports_field: 0.40, main_gate: 0.22, cafeteria: 0.15 },
+      }
+    );
   }
 
   return base;
@@ -227,6 +431,30 @@ function tunedProfiles(mode: ScenarioPackage['id']): RiderAgentProfile[] {
     if (mode === 'weekend-freeplay' && profile.id === 'sports-social') {
       return { ...profile, share: 0.22, baseDailyTrips: 86 };
     }
+    if (mode === 'summer-heat' && profile.id === 'sports-social') {
+      return { ...profile, share: 0.06, baseDailyTrips: 28 };
+    }
+    if (mode === 'summer-heat' && profile.id === 'library-focused') {
+      return { ...profile, share: 0.22, baseDailyTrips: 100 };
+    }
+    if (mode === 'opening-day' && profile.id === 'gate-connector') {
+      return { ...profile, share: 0.22, baseDailyTrips: 95 };
+    }
+    if (mode === 'opening-day' && profile.id === 'commuter') {
+      return { ...profile, share: 0.30, baseDailyTrips: 140 };
+    }
+    if (mode === 'night-study' && profile.id === 'library-focused') {
+      return { ...profile, share: 0.28, baseDailyTrips: 120 };
+    }
+    if (mode === 'night-study' && profile.id === 'sports-social') {
+      return { ...profile, share: 0.06, baseDailyTrips: 30 };
+    }
+    if (mode === 'sports-tournament' && profile.id === 'sports-social') {
+      return { ...profile, share: 0.28, baseDailyTrips: 110 };
+    }
+    if (mode === 'sports-tournament' && profile.id === 'commuter') {
+      return { ...profile, share: 0.25, baseDailyTrips: 130 };
+    }
     return profile;
   });
 }
@@ -237,6 +465,10 @@ const SCENARIO_SEEDS: Record<string, number> = {
   'exam-week': 20260316,
   'festival-day': 20260317,
   'weekend-freeplay': 20260318,
+  'summer-heat': 20260319,
+  'opening-day': 20260320,
+  'night-study': 20260321,
+  'sports-tournament': 20260322,
 };
 
 function makeScenario(
@@ -244,7 +476,7 @@ function makeScenario(
   label: string,
   description: string,
   dayKind: DayKind,
-  weatherKind: 'clear' | 'rainy' | 'exam_rain' | 'festival' | 'weekend',
+  weatherKind: 'clear' | 'rainy' | 'exam_rain' | 'festival' | 'weekend' | 'summer_heat' | 'opening_day' | 'night_study' | 'sports_day',
   totalBikes: number,
   baseDemandMultiplier: number,
   stationOverrides: Record<number, number>,
@@ -259,7 +491,7 @@ function makeScenario(
     seed: SCENARIO_SEEDS[id],
     semesterPhase: id === 'exam-week'
       ? 'exam_week'
-      : id === 'festival-day'
+      : id === 'festival-day' || id === 'sports-tournament'
         ? 'festival_day'
         : id === 'weekend-freeplay'
           ? 'weekend_mode'
@@ -276,13 +508,19 @@ function makeScenario(
     bikeHealth: {
       failureThreshold: 0.42,
       outageThreshold: 0.18,
-      wearPerKm: 0.035,
+      wearPerKm: id === 'summer-heat' ? 0.042 : 0.035,
       rainWearMultiplier: weatherKind === 'rainy' || weatherKind === 'exam_rain' ? 1.25 : 1,
       repairProbabilityPerSlot: id === 'exam-week' ? 0.2 / 15 : 0.24 / 15,
-      recoverySlots: id === 'festival-day' ? 15 : 30,
+      recoverySlots: id === 'festival-day' || id === 'sports-tournament' ? 15 : 30,
     },
     syntheticCorpus: {
-      dailyTripTarget: id === 'festival-day' ? 520 : id === 'weekend-freeplay' ? 360 : 430,
+      dailyTripTarget: id === 'festival-day' ? 520
+        : id === 'weekend-freeplay' ? 360
+        : id === 'summer-heat' ? 340
+        : id === 'opening-day' ? 580
+        : id === 'night-study' ? 400
+        : id === 'sports-tournament' ? 550
+        : 430,
       previewDays: 5,
       calibrationNote: 'Synthetic corpus generated from scenario template, station hotness, and rider archetype mix.',
       tripCorpusSeed: SCENARIO_SEEDS[id] + 77,
@@ -379,6 +617,78 @@ export const SCENARIO_LIBRARY: ScenarioPackage[] = [
       library: 0.08,
       sports_field: 0.12,
       main_gate: 0.08,
+    },
+  ),
+  makeScenario(
+    'summer-heat',
+    '酷暑日',
+    '高温天气下午后需求骤降，傍晚回凉后出行反弹，车辆磨损加速。',
+    'weekday',
+    'summer_heat',
+    1100,
+    0.85,
+    { 10: 1.30, 0: 1.08, 1: 1.08, 8: 1.12 },
+    {
+      dormitory: 0.48,
+      academic_building: 0.20,
+      cafeteria: 0.10,
+      library: 0.12,
+      sports_field: 0.02,
+      main_gate: 0.08,
+    },
+  ),
+  makeScenario(
+    'opening-day',
+    '开学日',
+    '新生报到高峰，校门和宿舍区人流激增，全天需求远超常态。',
+    'holiday',
+    'opening_day',
+    1400,
+    1.25,
+    { 0: 1.20, 1: 1.18, 2: 1.15, 3: 1.12, 13: 1.35, 14: 1.30 },
+    {
+      dormitory: 0.35,
+      academic_building: 0.12,
+      cafeteria: 0.12,
+      library: 0.05,
+      sports_field: 0.06,
+      main_gate: 0.30,
+    },
+  ),
+  makeScenario(
+    'night-study',
+    '夜间自习',
+    '白天需求平稳，夜间图书馆和教学楼自习需求集中爆发。',
+    'weekday',
+    'night_study',
+    1150,
+    0.95,
+    { 10: 1.35, 4: 1.15, 5: 1.18, 0: 1.10, 1: 1.08 },
+    {
+      dormitory: 0.44,
+      academic_building: 0.22,
+      cafeteria: 0.08,
+      library: 0.16,
+      sports_field: 0.04,
+      main_gate: 0.06,
+    },
+  ),
+  makeScenario(
+    'sports-tournament',
+    '运动会',
+    '全天赛事让运动场成为核心热点，上午和下午决赛时段需求峰值明显。',
+    'holiday',
+    'sports_day',
+    1300,
+    1.18,
+    { 11: 1.40, 12: 1.45, 8: 1.15, 9: 1.12, 13: 1.20 },
+    {
+      dormitory: 0.38,
+      academic_building: 0.10,
+      cafeteria: 0.14,
+      library: 0.04,
+      sports_field: 0.22,
+      main_gate: 0.12,
     },
   ),
 ];

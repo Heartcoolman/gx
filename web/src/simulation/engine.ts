@@ -46,11 +46,21 @@ export interface VehicleAnimation {
   path: number[];
   currentSegmentIndex: number;
   progress: number;
+  /** Current bike load on this vehicle */
+  currentLoad?: number;
+  /** Vehicle capacity */
+  capacity?: number;
 }
 
 interface FleetVehicleState extends DispatchVehicle {
   currentLoad: number;
   execution: VehicleDispatchExecution | null;
+  /** Shift tracking */
+  shiftStartSlot: number;
+  shiftEndSlot: number;
+  isOnShift: boolean;
+  /** Cumulative trips this shift */
+  tripsThisShift: number;
 }
 
 export class SimulationEngine {
@@ -327,6 +337,13 @@ export class SimulationEngine {
   }
 
   private async triggerRebalance(slotIndex: number, blockRate: number): Promise<void> {
+    // Storm delay: skip dispatch during severe weather
+    if (this.latestContext.weather === 'storm') {
+      // Delay dispatch during storms - vehicles can't safely operate
+      this.slotsSinceRebalance = Math.max(0, this.slotsSinceRebalance - 5);
+      return;
+    }
+
     this.isRebalancing = true;
     try {
       await this.refreshDispatchConfig();
@@ -393,7 +410,7 @@ export class SimulationEngine {
 
   private updateVehicleAnimations(virtualNow: number): void {
     this.activeVehicleAnimations = this.fleet
-      .map((vehicle) => this.toVehicleAnimation(vehicle.execution, virtualNow))
+      .map((vehicle) => this.toVehicleAnimation(vehicle, vehicle.execution, virtualNow))
       .filter((animation): animation is VehicleAnimation => animation !== null);
   }
 
@@ -436,15 +453,29 @@ export class SimulationEngine {
   }
 
   private syncFleetShape(): void {
+    // Stagger shifts: vehicles have different start/end times
+    const shiftPatterns = [
+      { start: 360, end: 1080 },   // 6:00 - 18:00 (day shift)
+      { start: 420, end: 1140 },   // 7:00 - 19:00
+      { start: 480, end: 1200 },   // 8:00 - 20:00
+      { start: 540, end: 1260 },   // 9:00 - 21:00
+      { start: 600, end: 1320 },   // 10:00 - 22:00
+    ];
+
     const nextFleet: FleetVehicleState[] = [];
     for (let index = 0; index < this.cachedVehicleCount; index++) {
       const previous = this.fleet[index];
+      const shift = shiftPatterns[index % shiftPatterns.length];
       nextFleet.push({
         id: index,
         capacity: this.cachedVehicleCapacity,
         current_position: previous?.current_position ?? 0,
         currentLoad: previous?.currentLoad ?? 0,
         execution: previous?.execution ?? null,
+        shiftStartSlot: previous?.shiftStartSlot ?? shift.start,
+        shiftEndSlot: previous?.shiftEndSlot ?? shift.end,
+        isOnShift: previous?.isOnShift ?? true,
+        tripsThisShift: previous?.tripsThisShift ?? 0,
       });
     }
     this.fleet = nextFleet;
@@ -457,8 +488,14 @@ export class SimulationEngine {
     ) {
       this.syncFleetShape();
     }
+    // Only return vehicles that are on-shift and not busy
+    const currentSlot = this.clock.slotIndex;
     return this.fleet
-      .filter((vehicle) => vehicle.execution === null)
+      .filter((vehicle) => {
+        if (vehicle.execution !== null) return false;
+        // Check if vehicle is on shift
+        return currentSlot >= vehicle.shiftStartSlot && currentSlot <= vehicle.shiftEndSlot;
+      })
       .map((vehicle) => ({
         id: vehicle.id,
         capacity: vehicle.capacity,
@@ -546,6 +583,7 @@ export class SimulationEngine {
   }
 
   private toVehicleAnimation(
+    vehicle: FleetVehicleState,
     execution: VehicleDispatchExecution | null,
     virtualNow: number,
   ): VehicleAnimation | null {
@@ -560,6 +598,8 @@ export class SimulationEngine {
       path: typedAnimation.path,
       currentSegmentIndex: typedAnimation.currentSegmentIndex,
       progress: typedAnimation.progress,
+      currentLoad: vehicle.currentLoad,
+      capacity: vehicle.capacity,
     };
   }
 }
