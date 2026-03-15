@@ -11,7 +11,7 @@ import {
 import { useSimulationStore } from '../../store/simulationStore';
 import { STATIONS } from '../../data/stations';
 
-type Mode = 'menu' | 'compare-run' | 'compare-done' | 'tune-run' | 'tune-done';
+type Mode = 'menu' | 'compare-run' | 'compare-done' | 'tune-run' | 'tune-done' | 'error';
 
 function pct(v: number): string { return `${(v * 100).toFixed(1)}%`; }
 
@@ -60,26 +60,57 @@ export default function BenchmarkPanel() {
   // Tune state
   const [tuneProgress, setTuneProgress] = useState<TunerProgress | null>(null);
   const [tuneHistory, setTuneHistory] = useState<TuningIteration[]>([]);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // ─── Handlers ───
   const startCompare = async () => {
     setMode('compare-run');
-    const r = await runBenchmark(dayKind, days, (p) => setCmpProgress({ ...p }), undefined, seed);
-    setBaseline(r.baseline);
-    setOptimized(r.optimized);
-    setMode('compare-done');
+    setErrorMsg(null);
+    try {
+      const r = await runBenchmark(dayKind, days, (p) => setCmpProgress({ ...p }), undefined, seed);
+      setBaseline(r.baseline);
+      setOptimized(r.optimized);
+      setMode('compare-done');
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : '未知错误');
+      setMode('error');
+    }
   };
 
   const startTune = async () => {
     setMode('tune-run');
     setTuneHistory([]);
-    const history = await autoTune(dayKind, days, 0.01, 0.98, (p) => {
-      setTuneProgress({ ...p });
-      if (p.history.length > 0) setTuneHistory([...p.history]);
-    }, seed);
-    setTuneHistory(history);
-    setMode('tune-done');
+    setErrorMsg(null);
+    try {
+      const history = await autoTune(dayKind, days, 0.01, 0.98, (p) => {
+        setTuneProgress({ ...p });
+        if (p.history.length > 0) setTuneHistory([...p.history]);
+      }, seed);
+      setTuneHistory(history);
+      setMode('tune-done');
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : '未知错误');
+      setMode('error');
+    }
   };
+
+  // ─── Error ───
+  if (mode === 'error' && errorMsg) {
+    return (
+      <div style={{ padding: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#dc2626', marginBottom: 10 }}>运行失败</div>
+        <div style={{
+          padding: 12, background: '#fef2f2', border: '1px solid #fecaca',
+          borderRadius: 8, fontSize: 12, color: '#991b1b', lineHeight: 1.6, marginBottom: 12,
+        }}>
+          {errorMsg}
+        </div>
+        <button onClick={() => setMode('menu')} style={{ ...btnFull, background: '#e2e8f0', color: '#334155' }}>
+          返回
+        </button>
+      </div>
+    );
+  }
 
   // ─── Menu ───
   if (mode === 'menu') {

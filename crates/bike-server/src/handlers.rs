@@ -253,7 +253,15 @@ pub async fn rebalance_cycle(
     let targets: Vec<TargetInventory> = req
         .stations
         .iter()
-        .map(|s| predictor.target_inventory(s.id, req.current_slot, s.capacity, &adaptive_config))
+        .map(|s| {
+            let mut t = predictor.target_inventory(s.id, req.current_slot, s.capacity, &adaptive_config);
+            // Uncertainty buffer: wider confidence interval → more buffer (max +3)
+            let pred = predictor.predict(s.id, req.current_slot);
+            let uncertainty = (pred.confidence_high - pred.confidence_low).max(0.0);
+            let uncertainty_buffer = (uncertainty * 0.25).ceil().min(3.0) as u32;
+            t.target_bikes = (t.target_bikes + uncertainty_buffer).min(s.capacity);
+            t
+        })
         .collect();
 
     // Step 1.5: enforce category-based minimum target floors (adaptive).
@@ -325,32 +333,45 @@ pub async fn rebalance_cycle(
 
     // ── Target normalization ──
     // When total target exceeds total available bikes the solver is fighting
-    // an impossible battle.  Scale down proportionally, preserving a dynamic
-    // floor: 1 per station when affordable, 0 when total_bikes < station_count.
+    // an impossible battle. Use priority-weighted scaling: empty/near-empty
+    // stations retain a larger share of the available bikes.
+    let status_map: std::collections::HashMap<StationId, u32> = req
+        .current_status
+        .iter()
+        .map(|s| (s.station_id, s.available_bikes))
+        .collect();
     let total_target: u32 = target_pairs.iter().map(|(_, t)| *t).sum();
     if total_target > total_bikes {
-        let station_count = req.stations.len() as u32;
-        let per_station_floor: u32 = if total_bikes >= station_count { 1 } else { 0 };
-        let total_min = per_station_floor * station_count;
-        let allocatable = total_bikes.saturating_sub(total_min);
-        let surplus_above_min: f64 = target_pairs
+        // Priority weights: empty stations 3x, near-empty 2x, others 1x
+        let weights: Vec<f64> = target_pairs
             .iter()
-            .map(|(_, t)| t.saturating_sub(per_station_floor) as f64)
-            .sum();
-        let scale = if surplus_above_min > 0.0 {
-            (allocatable as f64 / surplus_above_min).min(1.0)
-        } else {
-            0.0
-        };
-        target_pairs = target_pairs
-            .iter()
-            .zip(req.stations.iter())
-            .map(|((sid, t), s)| {
-                let above_min = t.saturating_sub(per_station_floor);
-                let scaled = per_station_floor + (above_min as f64 * scale).round() as u32;
-                (*sid, scaled.min(s.capacity))
+            .map(|(sid, _)| {
+                let current = status_map.get(sid).copied().unwrap_or(0);
+                if current == 0 {
+                    3.0
+                } else if current <= 2 {
+                    2.0
+                } else {
+                    1.0
+                }
             })
             .collect();
+        let weighted_total: f64 = target_pairs
+            .iter()
+            .zip(&weights)
+            .map(|((_, t), w)| *t as f64 * w)
+            .sum();
+        if weighted_total > 0.0 {
+            target_pairs = target_pairs
+                .iter()
+                .zip(&weights)
+                .zip(req.stations.iter())
+                .map(|(((sid, t), w), s)| {
+                    let share = (*t as f64 * w / weighted_total) * total_bikes as f64;
+                    (*sid, (share.round() as u32).max(1).min(s.capacity))
+                })
+                .collect();
+        }
     }
 
     // Step 2: solve rebalance.
@@ -372,6 +393,7 @@ pub async fn rebalance_cycle(
 
     let mut solve_config = config.clone();
     solve_config.weather = req.weather;
+    solve_config.current_slot_index = Some(req.current_slot.slot_index);
 
     let input = RebalanceInput {
         stations: req.stations,

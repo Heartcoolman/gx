@@ -1,4 +1,4 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import { useSimulationStore } from '../../store/simulationStore';
 import { useShallow } from 'zustand/react/shallow';
 import { STATIONS } from '../../data/stations';
@@ -10,6 +10,15 @@ export default function DemandChart() {
     snapshots: s.snapshots,
   })));
   const { selectedStationId } = useUIStore();
+
+  if (snapshots.length === 0) {
+    return (
+      <div className="chart-empty">
+        <div className="chart-empty-icon">📊</div>
+        <div className="chart-empty-text">点击「播放」启动仿真，查看实时趋势</div>
+      </div>
+    );
+  }
 
   const data = snapshots.map((snap) => {
     const entry: Record<string, number | string> = {
@@ -41,45 +50,72 @@ export default function DemandChart() {
         {label} - 车辆数趋势
       </div>
       <ResponsiveContainer width="100%" height="85%">
-        <LineChart data={data}>
+        <AreaChart data={data}>
+          <defs>
+            <linearGradient id="gradientBikes" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.15} />
+              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.01} />
+            </linearGradient>
+            <linearGradient id="gradientBlocked" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1} />
+              <stop offset="95%" stopColor="#ef4444" stopOpacity={0.01} />
+            </linearGradient>
+          </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
           <XAxis dataKey="time" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} />
-          <Tooltip />
+          <Tooltip
+            contentStyle={{
+              background: 'rgba(255, 255, 255, 0.92)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid #e2e8f0',
+              borderRadius: 10,
+              boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.05)',
+              fontSize: 12,
+            }}
+            formatter={(value: number, name: string) => {
+              if (name.includes('压力')) return [`${value.toFixed(1)}%`, name];
+              return [Math.round(value).toLocaleString(), name];
+            }}
+          />
           <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Line
+          <Area
             type="monotone"
             dataKey="bikes"
             stroke="#3b82f6"
             name={selectedStationId !== null ? '站点可借车' : '全站可借车'}
             strokeWidth={2}
+            fill="url(#gradientBikes)"
             dot={false}
           />
-          <Line
+          <Area
             type="monotone"
             dataKey="totalRides"
             stroke="#22c55e"
             name="累计骑行"
             strokeWidth={1.5}
+            fill="none"
             dot={false}
           />
-          <Line
+          <Area
             type="monotone"
             dataKey="blocked"
             stroke="#ef4444"
             name="阻塞次数"
             strokeWidth={1.5}
+            fill="url(#gradientBlocked)"
             dot={false}
           />
-          <Line
+          <Area
             type="monotone"
             dataKey="pressure"
             stroke="#f59e0b"
             name={selectedStationId !== null ? '站点压力' : '平均压力'}
             strokeWidth={1.5}
+            fill="none"
             dot={false}
           />
-        </LineChart>
+        </AreaChart>
       </ResponsiveContainer>
     </div>
   );

@@ -86,7 +86,10 @@ export function runBenchmark(
 
     worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       const msg = e.data;
-      if (msg.type === 'progress') {
+      if (msg.type === 'error') {
+        worker.terminate();
+        reject(new Error(msg.message));
+      } else if (msg.type === 'progress') {
         onProgress({
           phase: msg.phase as BenchmarkPhase,
           currentSlot: msg.currentSlot,
@@ -159,7 +162,14 @@ export function autoTune(
 
           w.onmessage = (e: MessageEvent<WorkerResponse>) => {
             const msg = e.data;
-            if (msg.type === 'tuningProgress') {
+            if (msg.type === 'error') {
+              targetReached = true;
+              for (const pw of parallelWorkers) {
+                try { pw.terminate(); } catch { /* noop */ }
+              }
+              reject(new Error(msg.message));
+              return;
+            } else if (msg.type === 'tuningProgress') {
               onProgress({
                 phase: 'running',
                 iteration: history.length + 1,
@@ -235,7 +245,11 @@ export function autoTune(
       // Fallback: single-worker sequential tuning (original behavior)
       worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
         const msg = e.data;
-        if (msg.type === 'tuningProgress') {
+        if (msg.type === 'error') {
+          worker.terminate();
+          reject(new Error(msg.message));
+          return;
+        } else if (msg.type === 'tuningProgress') {
           const patchResult = (r: { params: TuningParams; result: Omit<BenchmarkResult, 'snapshots'> }) => ({
             params: r.params,
             result: { ...r.result, snapshots: [] as Snapshot[] },

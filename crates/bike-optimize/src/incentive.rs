@@ -334,12 +334,16 @@ mod tests {
                 available_bikes: 0, // empty — critical
                 available_docks: 30,
                 timestamp: now,
+                broken_bikes: None,
+                maintenance_bikes: None,
             },
             StationStatus {
                 station_id: StationId(1),
                 available_bikes: 18, // big surplus
                 available_docks: 2,
                 timestamp: now,
+                broken_bikes: None,
+                maintenance_bikes: None,
             },
         ];
         let targets = vec![(StationId(0), 20), (StationId(1), 5)];
@@ -408,6 +412,8 @@ mod tests {
             available_bikes: 20,
             available_docks: 10,
             timestamp: now,
+            broken_bikes: None,
+            maintenance_bikes: None,
         }];
         let targets = vec![(StationId(0), 28)]; // needs 8 more
         let input = RebalanceInput {
@@ -484,6 +490,8 @@ mod tests {
                 available_bikes: 5,
                 available_docks: 15,
                 timestamp: now,
+                broken_bikes: None,
+                maintenance_bikes: None,
             })
             .collect();
         let targets: Vec<(StationId, u32)> = (0..n).map(|i| (StationId(i as u32), 15)).collect();
@@ -556,12 +564,16 @@ mod tests {
                 available_bikes: 5,
                 available_docks: 25,
                 timestamp: now,
+                broken_bikes: None,
+                maintenance_bikes: None,
             },
             StationStatus {
                 station_id: StationId(1),
                 available_bikes: 25,
                 available_docks: 5,
                 timestamp: now,
+                broken_bikes: None,
+                maintenance_bikes: None,
             },
         ];
         let mut config = SystemConfig::default();
@@ -643,12 +655,16 @@ mod tests {
                 available_bikes: 0, // empty — needs bikes
                 available_docks: 30,
                 timestamp: now,
+                broken_bikes: None,
+                maintenance_bikes: None,
             },
             StationStatus {
                 station_id: StationId(1),
                 available_bikes: 25,
                 available_docks: 5,
                 timestamp: now,
+                broken_bikes: None,
+                maintenance_bikes: None,
             },
         ];
         let input = RebalanceInput {
@@ -722,6 +738,8 @@ mod tests {
             available_bikes: 0,
             available_docks: 30,
             timestamp: now,
+            broken_bikes: None,
+            maintenance_bikes: None,
         }];
         let input = RebalanceInput {
             stations,

@@ -8,93 +8,40 @@ import BenchmarkPanel from '../benchmark/BenchmarkPanel';
 
 type SidebarTab = 'sim' | 'benchmark' | 'tuning';
 
+const TABS: Array<{ key: SidebarTab; label: string; color: string }> = [
+  { key: 'sim', label: '仿真控制', color: 'var(--primary)' },
+  { key: 'benchmark', label: '对比实验', color: 'var(--purple)' },
+  { key: 'tuning', label: '调参', color: '#f59e0b' },
+];
+
 export default function Sidebar() {
   const [tab, setTab] = useState<SidebarTab>('sim');
 
   return (
-    <aside style={{
-      width: 320,
-      background: 'var(--bg-sidebar)',
-      backdropFilter: 'blur(20px)',
-      WebkitBackdropFilter: 'blur(20px)',
-      borderRight: '1px solid var(--border-color)',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-      boxShadow: '1px 0 10px rgba(0,0,0,0.02)',
-      zIndex: 5,
-    }}>
+    <aside className="sidebar">
       {/* Tab switcher */}
-      <div style={{
-        display: 'flex',
-        borderBottom: '1px solid var(--border-color)',
-        background: 'rgba(255, 255, 255, 0.5)',
-      }}>
-        <button
-          onClick={() => setTab('sim')}
-          style={{
-            flex: 1, padding: '14px 0', border: 'none', background: 'transparent',
-            position: 'relative',
-            color: tab === 'sim' ? 'var(--primary)' : 'var(--text-muted)',
-            fontWeight: tab === 'sim' ? 600 : 500,
-            fontSize: 14, cursor: 'pointer',
-            transition: 'color var(--transition-normal)',
-          }}
-        >
-          仿真控制
-          {tab === 'sim' && (
-            <div style={{
-              position: 'absolute', bottom: 0, left: '20%', right: '20%', height: 3,
-              background: 'var(--primary)', borderRadius: '3px 3px 0 0',
-              boxShadow: '0 -2px 6px rgba(59, 130, 246, 0.4)'
-            }} />
-          )}
-        </button>
-        <button
-          onClick={() => setTab('benchmark')}
-          style={{
-            flex: 1, padding: '14px 0', border: 'none', background: 'transparent',
-            position: 'relative',
-            color: tab === 'benchmark' ? 'var(--purple)' : 'var(--text-muted)',
-            fontWeight: tab === 'benchmark' ? 600 : 500,
-            fontSize: 14, cursor: 'pointer',
-            transition: 'color var(--transition-normal)',
-          }}
-        >
-          对比实验
-          {tab === 'benchmark' && (
-            <div style={{
-              position: 'absolute', bottom: 0, left: '20%', right: '20%', height: 3,
-              background: 'var(--purple)', borderRadius: '3px 3px 0 0',
-              boxShadow: '0 -2px 6px rgba(139, 92, 246, 0.4)'
-            }} />
-          )}
-        </button>
-        <button
-          onClick={() => setTab('tuning')}
-          style={{
-            flex: 1, padding: '14px 0', border: 'none', background: 'transparent',
-            position: 'relative',
-            color: tab === 'tuning' ? '#f59e0b' : 'var(--text-muted)',
-            fontWeight: tab === 'tuning' ? 600 : 500,
-            fontSize: 14, cursor: 'pointer',
-            transition: 'color var(--transition-normal)',
-          }}
-        >
-          调参
-          {tab === 'tuning' && (
-            <div style={{
-              position: 'absolute', bottom: 0, left: '20%', right: '20%', height: 3,
-              background: '#f59e0b', borderRadius: '3px 3px 0 0',
-              boxShadow: '0 -2px 6px rgba(245, 158, 11, 0.4)'
-            }} />
-          )}
-        </button>
+      <div className="sidebar-tabs">
+        {TABS.map(({ key, label, color }) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`sidebar-tab ${tab === key ? 'sidebar-tab--active' : ''}`}
+            style={{ color: tab === key ? color : undefined }}
+          >
+            {label}
+            {tab === key && (
+              <div
+                className="sidebar-tab-indicator"
+                style={{ background: color, boxShadow: `0 -2px 6px ${color}66` }}
+              />
+            )}
+          </button>
+        ))}
       </div>
 
       {tab === 'sim' ? (
         <>
-          <div style={{ padding: 16, borderBottom: '1px solid #e2e8f0' }}>
+          <div className="sidebar-content">
             <SimulationControls />
             <div style={{ marginTop: 12 }}>
               <DayKindSelector />
@@ -103,16 +50,16 @@ export default function Sidebar() {
               <ScenarioSelector />
             </div>
           </div>
-          <div style={{ flex: 1, overflow: 'auto' }}>
+          <div className="sidebar-scroll">
             <StationList />
           </div>
         </>
       ) : tab === 'benchmark' ? (
-        <div style={{ flex: 1, overflow: 'auto' }}>
+        <div className="sidebar-scroll">
           <BenchmarkPanel />
         </div>
       ) : (
-        <div style={{ flex: 1, overflow: 'auto' }}>
+        <div className="sidebar-scroll">
           <ParameterTuning />
         </div>
       )}

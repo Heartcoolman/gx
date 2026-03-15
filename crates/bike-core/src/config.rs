@@ -25,6 +25,9 @@ pub struct SystemConfig {
     /// Current weather condition (e.g. "rain", "storm", "cold_front")
     #[serde(default)]
     pub weather: Option<String>,
+    /// Current time slot index (0..1439) for congestion-aware speed estimation
+    #[serde(default)]
+    pub current_slot_index: Option<u32>,
 }
 
 fn default_max_route_duration_minutes() -> f64 {
@@ -52,6 +55,7 @@ impl Default for SystemConfig {
             max_route_duration_minutes: 45.0,
             distance_cost_reference: 500.0,
             weather: None,
+            current_slot_index: None,
         }
     }
 }

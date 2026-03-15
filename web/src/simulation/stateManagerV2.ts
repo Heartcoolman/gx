@@ -93,6 +93,8 @@ export class StationStateManagerV2 {
 
   /** Per-station dock fault tracking */
   private dockStates: StationDockState[] = [];
+  /** Pre-computed nearest-station ordering per station (static — distanceMatrix never changes). */
+  private nearestStationOrder: number[][] = [];
 
   private slotServedDemand = 0;
   private slotUnmetDemand = 0;
@@ -646,6 +648,8 @@ export class StationStateManagerV2 {
       available_bikes: this.counters[station.id]?.available ?? 0,
       available_docks: Math.max(0, station.capacity - (this.counters[station.id]?.docked ?? 0)),
       timestamp: Math.floor(Date.now() / 1000),
+      broken_bikes: this.counters[station.id]?.broken ?? 0,
+      maintenance_bikes: this.counters[station.id]?.maintenance ?? 0,
     }));
   }
 
@@ -676,13 +680,7 @@ export class StationStateManagerV2 {
   applyDispatchDropoff(stationId: number, bikeCount: number): { dropped: number; stationId: number } {
     let remaining = bikeCount;
     let lastStationId = stationId;
-    const candidateStations = STATIONS
-      .map((station) => station.id)
-      .sort((left, right) => {
-        const leftDistance = distanceMatrix[stationId]?.[left] ?? Number.MAX_SAFE_INTEGER;
-        const rightDistance = distanceMatrix[stationId]?.[right] ?? Number.MAX_SAFE_INTEGER;
-        return leftDistance - rightDistance;
-      });
+    const candidateStations = this.nearestStationOrder[stationId] ?? [stationId];
 
     const loadedBikes = this.bikes.filter((bike) => bike.stationId === null && bike.condition === 'unavailable');
 
@@ -826,7 +824,9 @@ export class StationStateManagerV2 {
         repairSlotsRemaining: null,
       };
       this.bikes.push(bike);
-      // Update counters directly (bike is already set up)
+      // Register in ID→index map BEFORE updating counters so
+      // addBikeToCounters can populate stationAvailableIndices.
+      this.bikeIdToIndex.set(bike.id, i);
       this.addBikeToCounters(bike);
     }
 
@@ -839,11 +839,6 @@ export class StationStateManagerV2 {
         this.addBikeToCounters(bike);
       });
     }
-    // Build bike ID → index map for O(1) lookups
-    this.bikeIdToIndex.clear();
-    for (let idx = 0; idx < this.bikes.length; idx++) {
-      this.bikeIdToIndex.set(this.bikes[idx].id, idx);
-    }
     // Initialize dock states
     this.dockStates = STATIONS.map((station) => ({
       totalDocks: station.capacity,
@@ -851,6 +846,16 @@ export class StationStateManagerV2 {
       effectiveCapacity: station.capacity,
       lastMaintenanceSlot: 0,
     }));
+    // Pre-compute nearest-station ordering for dispatch dropoff
+    this.nearestStationOrder = STATIONS.map((_, originId) =>
+      STATIONS
+        .map((s) => s.id)
+        .sort((a, b) => {
+          const da = distanceMatrix[originId]?.[a] ?? Number.MAX_SAFE_INTEGER;
+          const db = distanceMatrix[originId]?.[b] ?? Number.MAX_SAFE_INTEGER;
+          return da - db;
+        }),
+    );
     this.beginSlot(0);
   }
 

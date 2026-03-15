@@ -18,37 +18,16 @@ export default function DashboardPanel() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-panel)' }}>
-      <div style={{
-        display: 'flex',
-        gap: 8,
-        padding: '0 16px',
-        borderBottom: '1px solid var(--border-color)',
-        background: 'var(--bg-panel)',
-        zIndex: 1,
-      }}>
+      <div className="dashboard-tabs">
         {TABS.map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
-            style={{
-              padding: '12px 16px',
-              border: 'none',
-              background: 'transparent',
-              position: 'relative',
-              color: activeTab === key ? 'var(--primary)' : 'var(--text-muted)',
-              fontWeight: activeTab === key ? 600 : 500,
-              fontSize: 13,
-              cursor: 'pointer',
-              transition: 'color var(--transition-fast)',
-            }}
+            className={`dashboard-tab ${activeTab === key ? 'dashboard-tab--active' : ''}`}
           >
             {label}
             {activeTab === key && (
-              <div style={{
-                position: 'absolute', bottom: 0, left: '10%', right: '10%', height: 3,
-                background: 'var(--primary)', borderRadius: '3px 3px 0 0',
-                boxShadow: '0 -2px 6px rgba(59, 130, 246, 0.3)'
-              }} />
+              <div className="dashboard-tab-indicator" />
             )}
           </button>
         ))}

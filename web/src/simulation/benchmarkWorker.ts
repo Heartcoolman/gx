@@ -37,13 +37,15 @@ export type WorkerResponse =
   | { type: 'progress'; phase: string; currentSlot: number; totalSlots: number; iteration?: number; totalIterations?: number }
   | { type: 'benchmarkDone'; baseline: BenchmarkResult; optimized: BenchmarkResult }
   | { type: 'tuningProgress'; iteration: number; totalIterations: number; currentSlot: number; totalSlots: number; bestSoFar: { params: TuningParams; result: BenchmarkResult } | null; history: Array<{ params: TuningParams; result: BenchmarkResult }> }
-  | { type: 'tuningDone'; history: Array<{ params: TuningParams; result: BenchmarkResult }> };
+  | { type: 'tuningDone'; history: Array<{ params: TuningParams; result: BenchmarkResult }> }
+  | { type: 'error'; message: string };
 
 // ── Fleet helpers ──
 
 interface BenchmarkFleetVehicle extends DispatchVehicle {
   currentLoad: number;
   execution: VehicleDispatchExecution | null;
+  wasBusy: boolean;
 }
 
 function buildFleetState(vehicleCount: number, vehicleCapacity: number): BenchmarkFleetVehicle[] {
@@ -53,6 +55,7 @@ function buildFleetState(vehicleCount: number, vehicleCapacity: number): Benchma
     current_position: 0,
     currentLoad: 0,
     execution: null,
+    wasBusy: false,
   }));
 }
 
@@ -101,6 +104,7 @@ function processDispatchExecutions(
 
     if (execution.nextStopIndex >= execution.stops.length && nowMs >= execution.busyUntilMs) {
       vehicle.execution = null;
+      vehicle.wasBusy = true;
     }
   }
 
@@ -173,9 +177,9 @@ async function runPhase(
       });
     } catch { /* keep current backend config */ }
 
-    // ── Predictor warmup: run 2 synthetic days through AgentSimulator ──
-    // This gives the demand predictor enough history to set useful targets.
-    for (let pass = 0; pass < 2; pass++) {
+    // ── Predictor warmup: run 4 synthetic days through AgentSimulator ──
+    // More warmup days give the predictor a stable baseline under high-noise scenarios.
+    for (let pass = 0; pass < 4; pass++) {
       seedRandom(seed + 1000 + pass);
       const warmupSim = new AgentSimulator(scenario);
       const warmupSm  = new StationStateManagerV2(scenario);
@@ -215,8 +219,8 @@ async function runPhase(
     // Run agent-based rider simulation.
     // setIncentives feeds the latest price signals back to the agent model so
     // riders respond to departure discounts and arrival rewards.
-    sm.beginSlot(slotIndex);
-    sm.processMaintenance(slotIndex);
+    // NOTE: agentSim.step() internally calls sm.beginSlot() and sm.processMaintenance(),
+    // so we must NOT call them here to avoid double-processing.
     agentSim.setIncentives(incentives);
     const { observations } = agentSim.step(slotIndex, slotMs, sm);
 
@@ -232,27 +236,74 @@ async function runPhase(
     minutesSinceRebalance++;
 
     // ── Dispatch cycle ──
-    if (dispatchEnabled && minutesSinceRebalance >= params.rebalanceIntervalMinutes) {
-      minutesSinceRebalance = 0;
-      const vehicles = availableFleet(fleet);
-      if (vehicles.length > 0) {
+    if (dispatchEnabled) {
+      const total     = sm.totalServedDemand + sm.totalUnmetDemand;
+      const blockRate = total > 0 ? sm.totalUnmetDemand / total : 0;
+
+      // Adaptive dispatch interval: more frequent when block rate is high
+      const effectiveInterval = blockRate >= 0.20 ? 8
+        : blockRate >= 0.10 ? 12
+        : params.rebalanceIntervalMinutes;
+
+      // Immediate re-dispatch: vehicles that just finished a route get dispatched right away
+      const justFinished = fleet.filter((v) => v.execution === null && v.wasBusy);
+      if (justFinished.length > 0) {
+        // Reset wasBusy flags
+        for (const v of justFinished) v.wasBusy = false;
+        const reDispatchVehicles = justFinished.map((v) => ({
+          id: v.id, capacity: v.capacity, current_position: v.current_position,
+        }));
         try {
-          const total     = sm.totalServedDemand + sm.totalUnmetDemand;
-          const blockRate = total > 0 ? sm.totalUnmetDemand / total : 0;
           const resp = await rebalanceCycle({
             stations:        STATIONS,
             current_status:  sm.buildStatus(),
             distance_matrix: distanceMatrix,
-            vehicles,
+            vehicles:        reDispatchVehicles,
             current_slot:    { day_kind: dayKind, slot_index: slotIndex },
             block_rate:      blockRate,
           });
-          // Collect incentives for next slot's agent simulation.
           incentives = resp.incentives;
           if (scheduleDispatchPlan(fleet, resp.dispatch_plan, slotEndMs) > 0) {
             dispatchCount++;
           }
         } catch { /* noop */ }
+      }
+
+      // Scheduled interval dispatch: fallback for all idle vehicles
+      if (minutesSinceRebalance >= effectiveInterval) {
+        minutesSinceRebalance = 0;
+        // Reset any remaining wasBusy flags
+        for (const v of fleet) v.wasBusy = false;
+        const vehicles = availableFleet(fleet);
+        if (vehicles.length > 0) {
+          try {
+            const resp = await rebalanceCycle({
+              stations:        STATIONS,
+              current_status:  sm.buildStatus(),
+              distance_matrix: distanceMatrix,
+              vehicles,
+              current_slot:    { day_kind: dayKind, slot_index: slotIndex },
+              block_rate:      blockRate,
+            });
+            incentives = resp.incentives;
+            if (scheduleDispatchPlan(fleet, resp.dispatch_plan, slotEndMs) > 0) {
+              dispatchCount++;
+            }
+          } catch { /* noop */ }
+        } else {
+          // No vehicles available, but still fetch incentives for demand shaping
+          try {
+            const resp = await rebalanceCycle({
+              stations:        STATIONS,
+              current_status:  sm.buildStatus(),
+              distance_matrix: distanceMatrix,
+              vehicles:        [],
+              current_slot:    { day_kind: dayKind, slot_index: slotIndex },
+              block_rate:      blockRate,
+            });
+            incentives = resp.incentives;
+          } catch { /* noop */ }
+        }
       }
     }
 
@@ -278,6 +329,17 @@ async function runPhase(
     satisfactionRate: total > 0 ? sm.totalServedDemand / total : 1,
     finalBikes:       counts,
   };
+}
+
+// ── Backend health check ──
+
+async function checkBackendAvailable(): Promise<boolean> {
+  try {
+    await getConfig();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ── Default params ──
@@ -308,6 +370,13 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
     const totalSlots = days * SLOTS_PER_DAY;
     const post       = (r: WorkerResponse) => self.postMessage(r);
 
+    // Verify backend is reachable before running dispatch phase.
+    const backendOk = await checkBackendAvailable();
+    if (!backendOk) {
+      post({ type: 'error', message: '后端服务未启动，无法执行调度对比。请先启动后端 (cargo run) 后重试。' });
+      return;
+    }
+
     try { await resetPredictor(); } catch { /* noop */ }
 
     // Phase 1: baseline — no dispatch, no incentives.
@@ -328,6 +397,14 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
   if (msg.type === 'runTuning') {
     const { dayKind, days, targetBlockRate, targetSatisfaction, seed } = msg;
     const totalSlots = days * SLOTS_PER_DAY;
+    const post       = (r: WorkerResponse) => self.postMessage(r);
+
+    const backendOk = await checkBackendAvailable();
+    if (!backendOk) {
+      post({ type: 'error', message: '后端服务未启动，无法执行调参。请先启动后端 (cargo run) 后重试。' });
+      return;
+    }
+
     const history: Array<{ params: TuningParams; result: BenchmarkResult }> = [];
     let best: { params: TuningParams; result: BenchmarkResult } | null = null;
     let expansionRounds = 0;

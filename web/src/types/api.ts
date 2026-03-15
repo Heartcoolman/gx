@@ -73,6 +73,8 @@ export interface CycleReq {
   current_slot: TimeSlot;
   /** Current block rate (0.0–1.0) for adaptive congestion response */
   block_rate: number;
+  /** Current weather condition (e.g. "rain", "storm", "cold_front") */
+  weather?: string;
 }
 export interface CycleResp {
   targets: TargetInventory[];

@@ -9,12 +9,13 @@ interface Props {
   bikes: number;
   brokenBikes: number;
   pressure: number;
+  globalMeanRatio: number;
 }
 
-export default function StationMarker({ station, bikes, brokenBikes, pressure }: Props) {
+export default function StationMarker({ station, bikes, brokenBikes, pressure, globalMeanRatio }: Props) {
   const { selectStation, selectedStationId } = useUIStore();
   const ratio = station.capacity > 0 ? bikes / station.capacity : 0;
-  const color = bikeRatioColor(ratio);
+  const color = bikeRatioColor(ratio, globalMeanRatio);
   const isSelected = selectedStationId === station.id;
   const radius = 8 + Math.log2(station.capacity / 15) * 4;
 
@@ -40,7 +41,7 @@ export default function StationMarker({ station, bikes, brokenBikes, pressure }:
           <div style={{ color: '#64748b' }}>坏车 {brokenBikes} / 压力 {(pressure * 100).toFixed(0)}%</div>
         </div>
       </Tooltip>
-      <StationPopup station={station} bikes={bikes} brokenBikes={brokenBikes} pressure={pressure} />
+      <StationPopup station={station} bikes={bikes} brokenBikes={brokenBikes} pressure={pressure} globalMeanRatio={globalMeanRatio} />
     </CircleMarker>
   );
 }

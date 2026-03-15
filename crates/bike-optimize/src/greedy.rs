@@ -41,6 +41,13 @@ pub(crate) fn compute_gaps(input: &RebalanceInput) -> (Vec<StationGap>, Vec<Stat
         .map(|s| (s.station_id, s.available_bikes))
         .collect();
 
+    // Broken + maintenance bike counts per station
+    let broken_map: std::collections::HashMap<StationId, u32> = input
+        .current_status
+        .iter()
+        .map(|s| (s.station_id, s.broken_bikes.unwrap_or(0) + s.maintenance_bikes.unwrap_or(0)))
+        .collect();
+
     // Map station_id -> index in the stations (and distance_matrix) array.
     // This decouples gap computation from targets ordering.
     let station_index_map: std::collections::HashMap<StationId, usize> = input
@@ -68,17 +75,24 @@ pub(crate) fn compute_gaps(input: &RebalanceInput) -> (Vec<StationGap>, Vec<Stat
             // Urgency: bigger shortage + fewer remaining bikes = more urgent.
             // Empty stations (0 bikes) get a massive urgency boost.
             let shortage = (-gap) as f64;
-            let urgency = if current == 0 {
+            let base_urgency = if current == 0 {
                 shortage * 10.0 // empty station: critical priority
             } else {
                 shortage / current as f64
+            };
+            // Broken/maintenance bikes reduce effective supply — boost urgency
+            let fault_count = broken_map.get(station_id).copied().unwrap_or(0);
+            let fault_boost = if fault_count > 0 {
+                1.0 + (fault_count as f64 * 0.15).min(0.6)
+            } else {
+                1.0
             };
             deficits.push(StationGap {
                 station_id: *station_id,
                 index: station_idx,
                 current_bikes: current,
                 gap,
-                urgency,
+                urgency: base_urgency * fault_boost,
             });
         }
     }
@@ -425,8 +439,8 @@ fn allocate_chunked_order(
     }
 }
 
-fn travel_minutes(distance_meters: f64) -> f64 {
-    let avg_speed_mps = 5.0;
+fn travel_minutes(distance_meters: f64, config: &bike_core::SystemConfig) -> f64 {
+    let avg_speed_mps = crate::vrp::effective_vehicle_speed(config);
     (distance_meters / avg_speed_mps) / 60.0
 }
 
@@ -555,7 +569,7 @@ fn append_hotspot_staging(
             .filter_map(|hotspot| {
                 let distance =
                     station_distance(&input.distance_matrix, current_index, hotspot.index);
-                let stage_minutes = travel_minutes(distance);
+                let stage_minutes = travel_minutes(distance, &input.config);
                 if current_route_minutes + stage_minutes > max_route_minutes {
                     return None;
                 }
@@ -620,11 +634,12 @@ fn build_routes(
     orders: &[MoveOrder],
     vehicles: &[DispatchVehicle],
     distance_matrix: &[Vec<f64>],
+    config: &bike_core::SystemConfig,
 ) -> Vec<VehicleRoute> {
     if orders.is_empty() || vehicles.is_empty() {
         return Vec::new();
     }
-    optimize_routes(orders, vehicles, distance_matrix)
+    optimize_routes(orders, vehicles, distance_matrix, config)
 }
 
 /// The main greedy rebalance solver.
@@ -665,7 +680,7 @@ impl RebalanceSolver for GreedyRebalanceSolver {
             peak_mode,
         );
 
-        let mut vehicle_routes = build_routes(&orders, &input.vehicles, &input.distance_matrix);
+        let mut vehicle_routes = build_routes(&orders, &input.vehicles, &input.distance_matrix, &input.config);
         append_hotspot_staging(&mut vehicle_routes, input, &deficits, &orders, peak_mode);
         let total_bikes_moved: u32 = vehicle_routes
             .iter()
@@ -745,18 +760,24 @@ mod tests {
                 available_bikes: 5,
                 available_docks: 25,
                 timestamp: now,
+                broken_bikes: None,
+                maintenance_bikes: None,
             },
             StationStatus {
                 station_id: StationId(1),
                 available_bikes: 22,
                 available_docks: 3,
                 timestamp: now,
+                broken_bikes: None,
+                maintenance_bikes: None,
             },
             StationStatus {
                 station_id: StationId(2),
                 available_bikes: 15,
                 available_docks: 5,
                 timestamp: now,
+                broken_bikes: None,
+                maintenance_bikes: None,
             },
         ];
         // Dorm needs 20, Building needs 8, Cafeteria needs 10
@@ -845,18 +866,24 @@ mod tests {
                 available_bikes: 20,
                 available_docks: 10,
                 timestamp: Utc::now(),
+                broken_bikes: None,
+                maintenance_bikes: None,
             },
             StationStatus {
                 station_id: StationId(1),
                 available_bikes: 0,
                 available_docks: 25,
                 timestamp: Utc::now(),
+                broken_bikes: None,
+                maintenance_bikes: None,
             },
             StationStatus {
                 station_id: StationId(2),
                 available_bikes: 0,
                 available_docks: 20,
                 timestamp: Utc::now(),
+                broken_bikes: None,
+                maintenance_bikes: None,
             },
         ];
         input.targets = vec![(StationId(0), 0), (StationId(1), 5), (StationId(2), 10)];
@@ -944,12 +971,16 @@ mod tests {
                     available_bikes: 0,
                     available_docks: 30,
                     timestamp: now,
+                    broken_bikes: None,
+                    maintenance_bikes: None,
                 },
                 StationStatus {
                     station_id: StationId(1),
                     available_bikes: 10,
                     available_docks: 20,
                     timestamp: now,
+                    broken_bikes: None,
+                    maintenance_bikes: None,
                 },
             ],
             targets: vec![(StationId(0), 20), (StationId(1), 0)],

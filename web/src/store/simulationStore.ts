@@ -166,6 +166,15 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   setBackendResults: (latestTargets, latestPlan, latestIncentives) =>
     set({ latestTargets, latestPlan, latestIncentives }),
   setVehicleAnimations: (vehicleAnimations) => set({ vehicleAnimations }),
-  addSnapshot: (snap) => set((state) => ({ snapshots: [...state.snapshots.slice(-47), snap] })),
+  addSnapshot: (snap) => set((state) => {
+    const MAX_SNAPSHOTS = 48;
+    if (state.snapshots.length < MAX_SNAPSHOTS) {
+      return { snapshots: [...state.snapshots, snap] };
+    }
+    // Ring buffer: shift out oldest, push new — reuses same array length
+    const next = state.snapshots.slice(1);
+    next.push(snap);
+    return { snapshots: next };
+  }),
   resetSnapshots: () => set({ snapshots: [] }),
 }));

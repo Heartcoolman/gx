@@ -54,6 +54,12 @@ pub struct StationStatus {
     pub available_docks: u32,
     #[serde(with = "chrono::serde::ts_seconds")]
     pub timestamp: chrono::DateTime<chrono::Utc>,
+    /// Number of broken (light_fault + unavailable) bikes at this station
+    #[serde(default)]
+    pub broken_bikes: Option<u32>,
+    /// Number of bikes currently in maintenance at this station
+    #[serde(default)]
+    pub maintenance_bikes: Option<u32>,
 }
 
 // ── Time ──

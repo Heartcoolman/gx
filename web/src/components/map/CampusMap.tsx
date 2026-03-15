@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { MapContainer, TileLayer } from 'react-leaflet';
 import { MAP_CENTER, MAP_ZOOM } from '../../data/constants';
 import StationMarker from './StationMarker';
@@ -20,6 +21,14 @@ export default function CampusMap() {
   })));
   const { showBikeFlows, showDispatchRoutes } = useUIStore();
 
+  // Compute global mean bike-to-capacity ratio for adaptive coloring
+  const globalMeanRatio = useMemo(() => {
+    if (bikes.length === 0) return 0.5;
+    const totalBikes = bikes.reduce((a, b) => a + b, 0);
+    const totalCapacity = STATIONS.reduce((a, s) => a + s.capacity, 0);
+    return totalCapacity > 0 ? totalBikes / totalCapacity : 0.5;
+  }, [bikes]);
+
   return (
     <MapContainer
       center={MAP_CENTER}
@@ -39,6 +48,7 @@ export default function CampusMap() {
           bikes={bikes[station.id] ?? 0}
           brokenBikes={brokenBikes[station.id] ?? 0}
           pressure={stationPressure[station.id] ?? 0}
+          globalMeanRatio={globalMeanRatio}
         />
       ))}
 
@@ -52,3 +62,4 @@ export default function CampusMap() {
     </MapContainer>
   );
 }
+

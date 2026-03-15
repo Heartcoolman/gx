@@ -20,10 +20,10 @@ export default function SimulationControls() {
 
   return (
     <div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 8 }}>
+      <div className="controls-section-title">
         仿真控制
       </div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div className="controls-row">
         {engineState !== 'running' ? (
           <button
             className={btnClass(true, true)}
@@ -52,7 +52,7 @@ export default function SimulationControls() {
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>
           倍速: <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{speed}x</span>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div className="speed-row">
           {SPEED_OPTIONS.map((s) => (
             <button
               key={s}
@@ -66,18 +66,12 @@ export default function SimulationControls() {
         </div>
       </div>
       {isWarming && (
-        <div style={{ marginTop: 8, fontSize: 12, color: '#f59e0b' }}>
+        <div className="warming-indicator">
+          <div className="warming-spinner" />
           正在预热模型...
         </div>
       )}
-      <div style={{
-        marginTop: 18,
-        padding: '12px 14px',
-        background: dispatchEnabled ? 'rgba(59, 130, 246, 0.05)' : 'rgba(239, 68, 68, 0.03)',
-        borderRadius: 'var(--radius-md)',
-        border: `1px solid ${dispatchEnabled ? 'rgba(59, 130, 246, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
-        transition: 'all var(--transition-normal)'
-      }}>
+      <div className={`dispatch-toggle-box ${dispatchEnabled ? 'dispatch-toggle-box--on' : 'dispatch-toggle-box--off'}`}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-main)' }}>
@@ -89,29 +83,12 @@ export default function SimulationControls() {
           </div>
           <div
             onClick={() => toggleDispatch(!dispatchEnabled)}
-            style={{
-              width: 44,
-              height: 24,
-              borderRadius: 12,
-              background: dispatchEnabled ? 'var(--primary)' : 'var(--border-color)',
-              cursor: 'pointer',
-              position: 'relative',
-              transition: 'background var(--transition-fast)',
-              flexShrink: 0,
-              boxShadow: dispatchEnabled ? '0 2px 6px rgba(59, 130, 246, 0.3)' : 'inset 0 2px 4px rgba(0,0,0,0.05)',
-            }}
+            className={`toggle-switch ${dispatchEnabled ? 'toggle-switch--on' : 'toggle-switch--off'}`}
           >
-            <div style={{
-              width: 20,
-              height: 20,
-              borderRadius: 10,
-              background: '#fff',
-              position: 'absolute',
-              top: 2,
-              left: dispatchEnabled ? 22 : 2,
-              transition: 'left var(--transition-fast)',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-            }} />
+            <div
+              className="toggle-knob"
+              style={{ left: dispatchEnabled ? 22 : 2 }}
+            />
           </div>
         </div>
       </div>

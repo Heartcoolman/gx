@@ -93,19 +93,7 @@ export default function ParameterTuning() {
       {/* Reset */}
       <button
         onClick={() => simEnv.applyPreset(DEFAULT_SIM_ENV)}
-        style={{
-          width: '100%',
-          marginTop: 12,
-          padding: '10px 0',
-          borderRadius: 'var(--radius-md)',
-          border: '1px solid var(--border-color)',
-          background: 'var(--bg-panel)',
-          cursor: 'pointer',
-          fontSize: 13,
-          fontWeight: 500,
-          color: 'var(--text-muted)',
-          transition: 'all var(--transition-fast)',
-        }}
+        className="reset-all-btn"
       >
         ↻ 重置为默认
       </button>

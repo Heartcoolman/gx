@@ -114,9 +114,18 @@ export class AgentSimulator {
   private destinationWeightCache: Map<string, number[]> = new Map();
   private incentivesVersion = 0;
   private lastCacheSlot = -1;
+  /** Pre-computed nearest-station ordering for each station (static — distanceMatrix never changes). */
+  private nearbyStationsCache: number[][];
 
   constructor(scenario: ScenarioPackage) {
     this.scenario = scenario;
+    // Pre-compute nearest station ordering for all stations once.
+    this.nearbyStationsCache = STATIONS.map((_, originId) =>
+      STATIONS
+        .map((station) => ({ stationId: station.id, distance: distanceMatrix[originId][station.id] }))
+        .sort((left, right) => left.distance - right.distance)
+        .map((entry) => entry.stationId),
+    );
   }
 
   /** Update the active price incentives from the latest dispatch cycle. */
@@ -440,10 +449,7 @@ export class AgentSimulator {
   }
 
   private rankNearbyStations(originStationId: number): number[] {
-    return STATIONS
-      .map((station) => ({ stationId: station.id, distance: distanceMatrix[originStationId][station.id] }))
-      .sort((left, right) => left.distance - right.distance)
-      .map((entry) => entry.stationId);
+    return this.nearbyStationsCache[originStationId];
   }
 
   private weatherWearMultiplier(weather: SlotEnvironmentContext['weather']): number {

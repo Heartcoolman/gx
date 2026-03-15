@@ -22,6 +22,8 @@ export interface StationStatus {
   available_bikes: number;
   available_docks: number;
   timestamp: number; // Unix timestamp in seconds (serde ts_seconds)
+  broken_bikes?: number;
+  maintenance_bikes?: number;
 }
 
 export const CATEGORY_LABELS: Record<StationCategory, string> = {

@@ -87,6 +87,7 @@ export class SimulationEngine {
   private rafId: number | null = null;
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private lastFrameTime: number | null = null;
+  private cachedBaseDateMs: number = 0;
   private lastSlotIndex = -1;
   private slotsSinceRebalance = 0;
   private isRebalancing = false;
@@ -135,6 +136,7 @@ export class SimulationEngine {
   start(): void {
     if (this.state === 'running') return;
     this.state = 'running';
+    this.cachedBaseDateMs = this.computeBaseDateMs();
     this.lastFrameTime = performance.now();
     this.startLoop();
   }
@@ -206,6 +208,7 @@ export class SimulationEngine {
     }
     this.refreshScenario(this.activeScenarioId);
     this.clock.reset(this.scenario.dayKind);
+    this.cachedBaseDateMs = this.computeBaseDateMs();
     this.lastSlotIndex = -1;
     this.slotsSinceRebalance = 0;
     this.isRebalancing = false;
@@ -362,6 +365,7 @@ export class SimulationEngine {
           slot_index: slotIndex,
         },
         block_rate: blockRate,
+        weather: this.latestContext.weather,
       });
 
       this.latestTargets = resp.targets;
@@ -414,10 +418,14 @@ export class SimulationEngine {
       .filter((animation): animation is VehicleAnimation => animation !== null);
   }
 
-  private baseDateMs(): number {
+  private computeBaseDateMs(): number {
     const date = new Date();
     date.setHours(0, 0, 0, 0);
     return date.getTime();
+  }
+
+  private baseDateMs(): number {
+    return this.cachedBaseDateMs;
   }
 
   private currentBlockRate(): number {

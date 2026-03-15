@@ -11,15 +11,16 @@ interface Props {
   bikes: number;
   brokenBikes: number;
   pressure: number;
+  globalMeanRatio: number;
 }
 
-export default function StationPopup({ station, bikes, brokenBikes, pressure }: Props) {
+export default function StationPopup({ station, bikes, brokenBikes, pressure, globalMeanRatio }: Props) {
   const { maintenanceBikes, snapshots } = useSimulationStore(useShallow(s => ({
     maintenanceBikes: s.maintenanceBikes,
     snapshots: s.snapshots,
   })));
   const ratio = station.capacity > 0 ? bikes / station.capacity : 0;
-  const color = bikeRatioColor(ratio);
+  const color = bikeRatioColor(ratio, globalMeanRatio);
   const latestSnapshot = snapshots[snapshots.length - 1];
   const runtime = latestSnapshot?.stationStates.find((state) => state.stationId === station.id);
 
@@ -55,7 +56,7 @@ export default function StationPopup({ station, bikes, brokenBikes, pressure }: 
             </tr>
             <tr>
               <td style={{ color: '#64748b' }}>状态</td>
-              <td style={{ textAlign: 'right', color }}>{bikeRatioLabel(ratio)}</td>
+              <td style={{ textAlign: 'right', color }}>{bikeRatioLabel(ratio, globalMeanRatio)}</td>
             </tr>
             <tr>
               <td style={{ color: '#64748b' }}>压力指数</td>

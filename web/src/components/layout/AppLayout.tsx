@@ -5,18 +5,12 @@ import CampusMap from '../map/CampusMap';
 
 export default function AppLayout() {
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100vh',
-      width: '100vw',
-      overflow: 'hidden',
-    }}>
+    <div className="app-root">
       <Header />
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative', zIndex: 1 }}>
+      <div className="app-body">
         <Sidebar />
-        <main style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ flex: 1, position: 'relative' }}>
+        <main className="app-main">
+          <div className="app-map-area">
             <CampusMap />
           </div>
           <BottomPanel />

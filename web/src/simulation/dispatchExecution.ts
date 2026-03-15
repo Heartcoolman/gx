@@ -116,8 +116,8 @@ function variableLoadUnloadTimeMs(bikeCount: number): number {
   if (bikeCount <= 0) return 0;
   let totalSeconds = 0;
   for (let i = 1; i <= bikeCount; i++) {
-    // Base 30s per bike, +2s for each additional bike (crowding penalty)
-    totalSeconds += 30 + Math.min(i - 1, 10) * 2;
+    // Base 15s per bike, +1s for each additional bike (crowding penalty)
+    totalSeconds += 15 + Math.min(i - 1, 10) * 1;
   }
   return totalSeconds * 1000;
 }
