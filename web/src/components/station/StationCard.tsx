@@ -5,13 +5,16 @@ import { bikeRatioColor } from '../../utils/colors';
 interface Props {
   station: Station;
   bikes: number;
+  brokenBikes: number;
+  pressure: number;
   selected: boolean;
   onClick: () => void;
 }
 
-export default function StationCard({ station, bikes, selected, onClick }: Props) {
+export default function StationCard({ station, bikes, brokenBikes, pressure, selected, onClick }: Props) {
   const ratio = station.capacity > 0 ? bikes / station.capacity : 0;
   const color = bikeRatioColor(ratio);
+  const pressureColor = pressure > 0.75 ? '#ef4444' : pressure > 0.5 ? '#f59e0b' : '#10b981';
 
   return (
     <div
@@ -38,9 +41,13 @@ export default function StationCard({ station, bikes, selected, onClick }: Props
             {bikes}
           </div>
           <div style={{ fontSize: 10, color: '#94a3b8' }}>
-            /{station.capacity}
+            /{station.capacity} 可借
           </div>
         </div>
+      </div>
+      <div style={{ marginTop: 4, display: 'flex', justifyContent: 'space-between', fontSize: 10 }}>
+        <span style={{ color: '#ef4444' }}>坏车 {brokenBikes}</span>
+        <span style={{ color: pressureColor }}>压力 {(pressure * 100).toFixed(0)}%</span>
       </div>
       {/* Mini progress bar */}
       <div style={{

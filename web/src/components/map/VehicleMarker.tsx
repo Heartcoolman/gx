@@ -8,15 +8,16 @@ interface Props {
 }
 
 export default function VehicleMarker({ animation }: Props) {
-  const { vehicleId, stops, currentStopIndex, progress } = animation;
+  const { vehicleId, path, currentSegmentIndex, progress } = animation;
   const color = VEHICLE_COLORS[vehicleId % VEHICLE_COLORS.length];
 
-  if (stops.length === 0) return null;
+  if (path.length < 2) return null;
 
-  // Interpolate between current stop and next stop
-  const currentStation = STATIONS[stops[currentStopIndex]];
-  const nextIdx = Math.min(currentStopIndex + 1, stops.length - 1);
-  const nextStation = STATIONS[stops[nextIdx]];
+  const currentStation = STATIONS[path[currentSegmentIndex]];
+  const nextIdx = Math.min(currentSegmentIndex + 1, path.length - 1);
+  const nextStation = STATIONS[path[nextIdx]];
+
+  if (!currentStation || !nextStation) return null;
 
   const lat = currentStation.latitude + (nextStation.latitude - currentStation.latitude) * progress;
   const lng = currentStation.longitude + (nextStation.longitude - currentStation.longitude) * progress;

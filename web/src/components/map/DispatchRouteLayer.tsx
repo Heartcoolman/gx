@@ -3,6 +3,7 @@ import type { DispatchPlan } from '../../types/dispatch';
 import type { VehicleAnimation } from '../../simulation/engine';
 import { STATIONS } from '../../data/stations';
 import { VEHICLE_COLORS } from '../../utils/colors';
+import { MAX_VISIBLE_VEHICLE_ROUTES } from '../../data/constants';
 import VehicleMarker from './VehicleMarker';
 
 interface Props {
@@ -11,9 +12,12 @@ interface Props {
 }
 
 export default function DispatchRouteLayer({ plan, vehicleAnimations }: Props) {
+  const visibleRoutes = plan.vehicle_routes.slice(0, MAX_VISIBLE_VEHICLE_ROUTES);
+  const visibleAnims = vehicleAnimations.slice(0, MAX_VISIBLE_VEHICLE_ROUTES);
+
   return (
     <>
-      {plan.vehicle_routes.map((route, i) => {
+      {visibleRoutes.map((route, i) => {
         if (route.stops.length === 0) return null;
         const color = VEHICLE_COLORS[i % VEHICLE_COLORS.length];
         const positions = route.stops.map(stop => {
@@ -35,7 +39,7 @@ export default function DispatchRouteLayer({ plan, vehicleAnimations }: Props) {
         );
       })}
 
-      {vehicleAnimations.map((anim) => (
+      {visibleAnims.map((anim) => (
         <VehicleMarker key={anim.vehicleId} animation={anim} />
       ))}
     </>

@@ -89,6 +89,9 @@ pub struct CycleReq {
     pub distance_matrix: Vec<Vec<f64>>,
     pub vehicles: Vec<DispatchVehicle>,
     pub current_slot: TimeSlot,
+    /// Current block rate (0.0–1.0) for adaptive congestion response.
+    #[serde(default)]
+    pub block_rate: f64,
 }
 
 #[derive(Serialize)]
@@ -153,9 +156,7 @@ pub struct ResetResp {
     pub ok: bool,
 }
 
-pub async fn reset_predictor(
-    State(state): State<AppState>,
-) -> Json<ResetResp> {
+pub async fn reset_predictor(State(state): State<AppState>) -> Json<ResetResp> {
     let mut predictor = state.predictor.write().await;
     predictor.reset();
     Json(ResetResp { ok: true })
@@ -213,31 +214,127 @@ pub async fn rebalance_cycle(
     let config = state.config.read().await;
     let predictor = state.predictor.read().await;
 
-    // Step 1: compute target for each station.
+    // ── Adaptive congestion detection ──
+    // congestion_factor: 1.0 at 0% block rate, scales up with congestion.
+    let block_rate = req.block_rate.clamp(0.0, 1.0);
+    let congestion_factor = 1.0 + block_rate * 4.0;
+    let high_pressure = block_rate > 0.08;
+
+    // Adaptive config overrides
+    let effective_safety = (config.safety_buffer_ratio * congestion_factor).min(2.0);
+    let effective_peak_mult = config.peak_multiplier * (1.0 + block_rate * 1.25);
+
+    let mut adaptive_config = config.clone();
+    adaptive_config.safety_buffer_ratio = effective_safety;
+    adaptive_config.peak_multiplier = effective_peak_mult;
+    adaptive_config.prediction_horizon_slots = if high_pressure {
+        (config.prediction_horizon_slots + 2 + (block_rate * 4.0).round() as u32).min(16)
+    } else {
+        config.prediction_horizon_slots
+    };
+
+    // Step 1: compute prediction-based target for each station.
     let targets: Vec<TargetInventory> = req
         .stations
         .iter()
-        .map(|s| {
-            predictor.target_inventory(s.id, req.current_slot, s.capacity, &config)
-        })
+        .map(|s| predictor.target_inventory(s.id, req.current_slot, s.capacity, &adaptive_config))
         .collect();
 
-    // Step 1.5: enforce category-based minimum target floors.
-    // This prevents cold-predictor from producing near-zero targets.
-    let target_pairs: Vec<(StationId, u32)> = targets
+    // Step 1.5: enforce category-based minimum target floors (adaptive).
+    let total_bikes: u32 = req.current_status.iter().map(|s| s.available_bikes).sum();
+
+    // Under high pressure, compute demand-proportional targets.
+    let demand_targets: Vec<f64> = if high_pressure {
+        let predicted_pickups: Vec<f64> = req
+            .stations
+            .iter()
+            .map(|s| {
+                let mut cumulative_outflow = 0.0;
+                let mut max_cumulative_outflow: f64 = 0.0;
+                let mut positive_outflow_sum = 0.0;
+
+                for offset in 0..adaptive_config.prediction_horizon_slots {
+                    let future_slot = req.current_slot.advance(offset);
+                    let pred = predictor.predict(s.id, future_slot);
+                    let net_outflow = pred.pickups - pred.returns;
+                    cumulative_outflow += net_outflow;
+                    max_cumulative_outflow = max_cumulative_outflow.max(cumulative_outflow);
+                    positive_outflow_sum += net_outflow.max(0.0);
+                }
+
+                max_cumulative_outflow
+                    .max(positive_outflow_sum * 0.5)
+                    .max(0.1)
+            })
+            .collect();
+        let total_predicted: f64 = predicted_pickups.iter().sum();
+        predicted_pickups
+            .iter()
+            .map(|p| (p / total_predicted) * total_bikes as f64)
+            .collect()
+    } else {
+        vec![0.0; req.stations.len()]
+    };
+
+    let mut target_pairs: Vec<(StationId, u32)> = targets
         .iter()
         .zip(req.stations.iter())
-        .map(|(t, s)| {
-            let min_ratio = match s.category {
-                StationCategory::Dormitory => 0.40,
-                StationCategory::AcademicBuilding | StationCategory::Cafeteria => 0.20,
-                _ => 0.15,
+        .enumerate()
+        .map(|(i, (t, s))| {
+            // Adaptive category floors
+            let base_ratio = match s.category {
+                StationCategory::Dormitory => 0.50,
+                StationCategory::AcademicBuilding | StationCategory::Cafeteria => 0.30,
+                _ => 0.25,
             };
-            let min_target = (s.capacity as f64 * min_ratio).ceil() as u32;
-            let effective_target = t.target_bikes.max(min_target);
+            let adaptive_ratio = (base_ratio * congestion_factor).min(0.90);
+            let min_target = (s.capacity as f64 * adaptive_ratio).ceil() as u32;
+
+            let prediction_target = t.target_bikes.max(min_target);
+
+            // Under high pressure, blend prediction target with demand-proportional target.
+            let effective_target = if high_pressure {
+                let demand_t = demand_targets[i].round() as u32;
+                let blend = (0.35 + block_rate * 0.9).min(0.9);
+                let blended = (prediction_target as f64 * (1.0 - blend) + demand_t as f64 * blend)
+                    .round() as u32;
+                blended.max(min_target).min(s.capacity)
+            } else {
+                prediction_target
+            };
+
             (t.station_id, effective_target)
         })
         .collect();
+
+    // ── Target normalization ──
+    // When total target exceeds total available bikes the solver is fighting
+    // an impossible battle.  Scale down proportionally, preserving a minimum
+    // floor of 1 per station so every station keeps *some* allocation.
+    let total_target: u32 = target_pairs.iter().map(|(_, t)| *t).sum();
+    if total_target > total_bikes {
+        let station_count = req.stations.len() as u32;
+        let total_min = station_count; // floor: 1 per station
+        let allocatable = total_bikes.saturating_sub(total_min);
+        let surplus_above_min: f64 = target_pairs
+            .iter()
+            .map(|(_, t)| t.saturating_sub(1) as f64)
+            .sum();
+        let scale = if surplus_above_min > 0.0 {
+            (allocatable as f64 / surplus_above_min).min(1.0)
+        } else {
+            0.0
+        };
+        target_pairs = target_pairs
+            .iter()
+            .zip(req.stations.iter())
+            .map(|((sid, t), s)| {
+                let above_min = t.saturating_sub(1);
+                let scaled = 1 + (above_min as f64 * scale).round() as u32;
+                (*sid, scaled.min(s.capacity))
+            })
+            .collect();
+    }
 
     // Step 2: solve rebalance.
     let input = RebalanceInput {
@@ -274,7 +371,7 @@ pub async fn put_config(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::Body, http::Request, Router, routing::post};
+    use axum::{body::Body, http::Request, routing::post, Router};
     use http_body_util::BodyExt;
     use tower::ServiceExt;
 
@@ -290,7 +387,11 @@ mod tests {
             .with_state(state)
     }
 
-    async fn post_json(app: &Router, path: &str, body: serde_json::Value) -> (StatusCode, serde_json::Value) {
+    async fn post_json(
+        app: &Router,
+        path: &str,
+        body: serde_json::Value,
+    ) -> (StatusCode, serde_json::Value) {
         let req = Request::builder()
             .method("POST")
             .uri(path)
@@ -301,7 +402,8 @@ mod tests {
         let resp = app.clone().oneshot(req).await.unwrap();
         let status = resp.status();
         let bytes = resp.into_body().collect().await.unwrap().to_bytes();
-        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+        let json: serde_json::Value =
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
         (status, json)
     }
 
@@ -345,13 +447,13 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["accepted"], 1);
 
-        // Now predict.
+        // Now predict at slot 480 (= 08:00 in 1-minute slots).
         let (status, body) = post_json(
             &app,
             "/api/v1/predict/demand",
             serde_json::json!({
                 "station_id": 1,
-                "time_slot": {"day_kind": "weekday", "slot_index": 32}
+                "time_slot": {"day_kind": "weekday", "slot_index": 480}
             }),
         )
         .await;

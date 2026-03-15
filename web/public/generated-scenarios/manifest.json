@@ -1,0 +1,41 @@
+{
+  "version": "2.0.0",
+  "generatedAt": "2026-03-14T05:20:48.906Z",
+  "scenarios": [
+    {
+      "id": "weekday-spring",
+      "label": "工作日常态",
+      "description": "常规教学周的晴朗工作日，换课潮、午餐峰和闭馆回流明显。",
+      "dayKind": "weekday",
+      "seed": 20260314
+    },
+    {
+      "id": "rainy-commute",
+      "label": "雨天通勤",
+      "description": "全天降雨叠加寒潮，短途保留，长距离和运动需求下降，坏车率更高。",
+      "dayKind": "weekday",
+      "seed": 20260315
+    },
+    {
+      "id": "exam-week",
+      "label": "考试周",
+      "description": "图书馆和教学区压力明显上升，晚间回宿舍延后，需求更集中。",
+      "dayKind": "exam_period",
+      "seed": 20260316
+    },
+    {
+      "id": "festival-day",
+      "label": "活动日",
+      "description": "傍晚大型活动让运动场和校门成为热点，晚高峰和短时溢出都更明显。",
+      "dayKind": "holiday",
+      "seed": 20260317
+    },
+    {
+      "id": "weekend-freeplay",
+      "label": "周末休闲",
+      "description": "学习通勤减弱，运动、社交和短途餐饮出行更分散。",
+      "dayKind": "saturday",
+      "seed": 20260318
+    }
+  ]
+}

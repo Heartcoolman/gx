@@ -2,7 +2,9 @@ mod predictor;
 
 pub use predictor::CompositePredictor;
 
-use bike_core::{DemandRecord, PredictedDemand, StationId, SystemConfig, TargetInventory, TimeSlot};
+use bike_core::{
+    DemandRecord, PredictedDemand, StationId, SystemConfig, TargetInventory, TimeSlot,
+};
 
 /// Trait for demand prediction engines.
 pub trait DemandPredictor: Send + Sync {

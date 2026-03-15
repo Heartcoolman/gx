@@ -69,6 +69,8 @@ export interface CycleReq {
   distance_matrix: number[][];
   vehicles: DispatchVehicle[];
   current_slot: TimeSlot;
+  /** Current block rate (0.0–1.0) for adaptive congestion response */
+  block_rate: number;
 }
 export interface CycleResp {
   targets: TargetInventory[];

@@ -4,6 +4,13 @@ import { STATIONS } from '../data/stations';
 import { DEMAND_PROFILES, CATEGORY_AFFINITY, BASE_RIDES_PER_SLOT } from '../data/demandProfiles';
 import { distanceMatrix } from './distanceMatrix';
 import { random } from './rng';
+import { useSimEnvStore } from '../store/simEnvStore';
+import type { SimEnvConfig } from '../store/simEnvStore';
+import { SLOTS_PER_DAY } from '../types/time';
+import { SLOT_DURATION_MS } from '../data/constants';
+
+/** Per-station cap to prevent browser freeze under extreme settings */
+const MAX_PICKUPS_PER_STATION = 200;
 
 function gaussianNoise(mean: number, sigma: number): number {
   // Box-Muller transform
@@ -26,30 +33,40 @@ function weightedRandomPick(weights: number[]): number {
 
 /**
  * Generate synthetic demand records for a given time slot.
- * Returns ~20-60 records depending on time of day.
+ * Returns ~1-4 records per 1-minute slot depending on time of day.
  */
 export function generateDemand(
   slotIndex: number,
   baseTimeISO: string,
+  envOverride?: Partial<SimEnvConfig>,
 ): DemandRecord[] {
   const records: DemandRecord[] = [];
+  const storeEnv = useSimEnvStore.getState();
+  const demandMultiplier = envOverride?.demandMultiplier ?? storeEnv.demandMultiplier;
+  const peakIntensity = envOverride?.peakIntensity ?? storeEnv.peakIntensity;
+  const noiseFactor = envOverride?.noiseFactor ?? storeEnv.noiseFactor;
 
   for (const station of STATIONS) {
     const cat = station.category;
     const profile = DEMAND_PROFILES[cat];
-    const baseRate = BASE_RIDES_PER_SLOT[cat];
+    const baseRate = BASE_RIDES_PER_SLOT[cat] * demandMultiplier;
 
-    // Pickup count with noise
-    const pickupRate = profile.pickup[slotIndex] * baseRate;
-    const pickupCount = Math.round(gaussianNoise(pickupRate, pickupRate * 0.2));
+    // Pickup count with noise — scale profile peaks by peakIntensity
+    const profileValue = profile.pickup[slotIndex];
+    const scaledProfile = profileValue > 0.3 ? profileValue * peakIntensity : profileValue;
+    const pickupRate = scaledProfile * baseRate;
+    const pickupCount = Math.min(
+      Math.round(gaussianNoise(pickupRate, pickupRate * noiseFactor)),
+      MAX_PICKUPS_PER_STATION,
+    );
 
     for (let i = 0; i < pickupCount; i++) {
       const dest = pickDestination(station.id, cat);
       if (dest === station.id) continue; // skip self
 
       const baseTime = new Date(baseTimeISO);
-      // Random offset within the 15-minute slot
-      const offsetMs = random() * 15 * 60 * 1000;
+      // Random offset within the 1-minute slot
+      const offsetMs = random() * SLOT_DURATION_MS;
       const departureTime = new Date(baseTime.getTime() + offsetMs);
 
       // Travel time based on distance (assume ~3m/s bike speed)
@@ -83,14 +100,17 @@ function pickDestination(originId: number, originCat: StationCategory): number {
 /**
  * Generate a full day of historical demand for backend warm-up.
  */
-export function generateFullDayHistory(dayKindISO: string): DemandRecord[][] {
+export function generateFullDayHistory(
+  dayKindISO: string,
+  envOverride?: Partial<SimEnvConfig>,
+): DemandRecord[][] {
   const slots: DemandRecord[][] = [];
   const baseDate = new Date(dayKindISO);
   baseDate.setHours(0, 0, 0, 0);
 
-  for (let slot = 0; slot < 96; slot++) {
-    const slotTime = new Date(baseDate.getTime() + slot * 15 * 60 * 1000);
-    slots.push(generateDemand(slot, slotTime.toISOString()));
+  for (let slot = 0; slot < SLOTS_PER_DAY; slot++) {
+    const slotTime = new Date(baseDate.getTime() + slot * SLOT_DURATION_MS);
+    slots.push(generateDemand(slot, slotTime.toISOString(), envOverride));
   }
   return slots;
 }

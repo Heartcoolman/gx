@@ -38,7 +38,7 @@ function ParamsDisplay({ p }: { p: TuningParams }) {
     <div style={{ lineHeight: 1.8 }}>
       <ParamTag label="车辆" value={`${p.vehicleCount}`} />
       <ParamTag label="容量" value={`${p.vehicleCapacity}`} />
-      <ParamTag label="间隔" value={`${p.rebalanceIntervalSlots * 15}min`} />
+      <ParamTag label="间隔" value={`${p.rebalanceIntervalMinutes}min`} />
       <ParamTag label="缓冲" value={`${(p.safetyBufferRatio * 100).toFixed(0)}%`} />
       <ParamTag label="峰值" value={`${p.peakMultiplier}x`} />
       <ParamTag label="预测" value={`${p.predictionHorizonSlots}槽`} />
@@ -247,7 +247,7 @@ export default function BenchmarkPanel() {
                   <td style={td}>{i + 1}</td>
                   <td style={td}>{it.params.vehicleCount}</td>
                   <td style={td}>{it.params.vehicleCapacity}</td>
-                  <td style={td}>{it.params.rebalanceIntervalSlots * 15}m</td>
+                  <td style={td}>{it.params.rebalanceIntervalMinutes}m</td>
                   <td style={td}>{(it.params.safetyBufferRatio * 100).toFixed(0)}%</td>
                   <td style={{ ...td, color: it.result.blockRate <= 0.01 ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
                     {pct(it.result.blockRate)}

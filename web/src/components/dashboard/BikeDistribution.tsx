@@ -3,15 +3,16 @@ import { useSimulationStore } from '../../store/simulationStore';
 import { STATIONS } from '../../data/stations';
 
 export default function BikeDistribution() {
-  const { bikes, latestTargets } = useSimulationStore();
+  const { bikes, brokenBikes, maintenanceBikes, stationPressure } = useSimulationStore();
 
   const data = STATIONS.map((st) => {
-    const target = latestTargets.find(t => t.station_id === st.id);
     return {
       name: st.name.replace(/第[一二]/, '').slice(0, 4),
       current: bikes[st.id] ?? 0,
+      broken: brokenBikes[st.id] ?? 0,
+      maintenance: maintenanceBikes[st.id] ?? 0,
       capacity: st.capacity,
-      target: target?.target_bikes ?? 0,
+      pressure: Math.round((stationPressure[st.id] ?? 0) * 100),
     };
   });
 
@@ -28,8 +29,9 @@ export default function BikeDistribution() {
           <Tooltip />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           <Bar dataKey="current" fill="#3b82f6" name="当前车辆" radius={[2, 2, 0, 0]} />
-          <Bar dataKey="target" fill="#f97316" name="目标车辆" radius={[2, 2, 0, 0]} opacity={0.6} />
-          <Bar dataKey="capacity" fill="#e2e8f0" name="总容量" radius={[2, 2, 0, 0]} />
+          <Bar dataKey="broken" fill="#ef4444" name="坏车" radius={[2, 2, 0, 0]} />
+          <Bar dataKey="maintenance" fill="#f59e0b" name="维修" radius={[2, 2, 0, 0]} />
+          <Bar dataKey="pressure" fill="#14b8a6" name="压力指数" radius={[2, 2, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

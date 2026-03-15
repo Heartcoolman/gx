@@ -2,8 +2,10 @@ import type { StationStatus } from '../types/station';
 import type { DemandRecord } from '../types/demand';
 import type { DispatchPlan } from '../types/dispatch';
 import { STATIONS } from '../data/stations';
-import { TOTAL_BIKES, INITIAL_DORMITORY_RATIO } from '../data/constants';
+import { INITIAL_DORMITORY_RATIO } from '../data/constants';
 import { CATEGORY_STATIONS } from '../data/stations';
+import { useSimEnvStore } from '../store/simEnvStore';
+import { distanceMatrix } from './distanceMatrix';
 
 export interface ActiveRide {
   origin: number;
@@ -34,14 +36,15 @@ export class StationStateManager {
   }
 
   private initializeDistribution(): void {
+    const totalBikes = useSimEnvStore.getState().totalBikes;
     const dormIds = CATEGORY_STATIONS.dormitory;
-    const dormBikes = Math.round(TOTAL_BIKES * INITIAL_DORMITORY_RATIO);
+    const dormBikes = Math.round(totalBikes * INITIAL_DORMITORY_RATIO);
     const perDorm = Math.floor(dormBikes / dormIds.length);
     for (const id of dormIds) {
       this.bikes[id] = Math.min(perDorm, STATIONS[id].capacity);
     }
 
-    let remaining = TOTAL_BIKES - dormIds.reduce((s, id) => s + this.bikes[id], 0);
+    let remaining = totalBikes - dormIds.reduce((s, id) => s + this.bikes[id], 0);
     const otherStations = STATIONS.filter(s => !dormIds.includes(s.id));
     const totalOtherCap = otherStations.reduce((s, st) => s + st.capacity, 0);
 
@@ -52,8 +55,8 @@ export class StationStateManager {
 
     // Fix rounding
     let total = this.bikes.reduce((a, b) => a + b, 0);
-    while (total < TOTAL_BIKES) {
-      for (let i = 0; i < this.bikes.length && total < TOTAL_BIKES; i++) {
+    while (total < totalBikes) {
+      for (let i = 0; i < this.bikes.length && total < totalBikes; i++) {
         if (this.bikes[i] < STATIONS[i].capacity) {
           this.bikes[i]++;
           total++;
@@ -121,17 +124,50 @@ export class StationStateManager {
   applyDispatchPlan(plan: DispatchPlan): void {
     for (const route of plan.vehicle_routes) {
       for (const stop of route.stops) {
-        const sid = stop.station_id;
         if (stop.action === 'pickup') {
-          const actual = Math.min(stop.bike_count, this.bikes[sid]);
-          this.bikes[sid] -= actual;
+          this.applyDispatchPickup(stop.station_id, stop.bike_count);
         } else {
-          const space = STATIONS[sid].capacity - this.bikes[sid];
-          const actual = Math.min(stop.bike_count, space);
-          this.bikes[sid] += actual;
+          this.applyDispatchDropoff(stop.station_id, stop.bike_count);
         }
       }
     }
+  }
+
+  applyDispatchPickup(stationId: number, bikeCount: number): number {
+    const actual = Math.min(bikeCount, this.bikes[stationId] ?? 0);
+    this.bikes[stationId] -= actual;
+    return actual;
+  }
+
+  applyDispatchDropoff(stationId: number, bikeCount: number): { dropped: number; stationId: number } {
+    let remaining = bikeCount;
+    let lastStationId = stationId;
+    const fallbackStations = STATIONS
+      .map((station) => station.id)
+      .sort((left, right) => {
+        const leftDistance = distanceMatrix[stationId]?.[left] ?? Number.MAX_SAFE_INTEGER;
+        const rightDistance = distanceMatrix[stationId]?.[right] ?? Number.MAX_SAFE_INTEGER;
+        return leftDistance - rightDistance;
+      });
+
+    for (const candidateId of fallbackStations) {
+      if (remaining <= 0) {
+        break;
+      }
+      const space = STATIONS[candidateId].capacity - this.bikes[candidateId];
+      if (space <= 0) {
+        continue;
+      }
+      const actual = Math.min(remaining, space);
+      this.bikes[candidateId] += actual;
+      remaining -= actual;
+      lastStationId = candidateId;
+    }
+
+    return {
+      dropped: bikeCount - remaining,
+      stationId: lastStationId,
+    };
   }
 
   /** Take a snapshot for chart data */

@@ -12,15 +12,18 @@ export default function DemandChart() {
     const entry: Record<string, number | string> = {
       time: slotToTime(snap.slotIndex),
       slot: snap.slotIndex,
-      totalRides: snap.totalRides,
-      blocked: snap.blockedCount,
+      totalRides: snap.cumulativeServed,
+      blocked: snap.cumulativeUnmet,
+      walkTransfers: snap.walkTransfers,
+      overflowEvents: snap.overflowEvents,
     };
 
-    // Show bike count for selected station or total
     if (selectedStationId !== null) {
       entry.bikes = snap.bikes[selectedStationId] ?? 0;
+      entry.pressure = (snap.pressure[selectedStationId] ?? 0) * 100;
     } else {
       entry.bikes = snap.bikes.reduce((a, b) => a + b, 0);
+      entry.pressure = (snap.pressure.reduce((a, b) => a + b, 0) / Math.max(1, snap.pressure.length)) * 100;
     }
     return entry;
   });
@@ -45,7 +48,7 @@ export default function DemandChart() {
             type="monotone"
             dataKey="bikes"
             stroke="#3b82f6"
-            name="可用车辆"
+            name={selectedStationId !== null ? '站点可借车' : '全站可借车'}
             strokeWidth={2}
             dot={false}
           />
@@ -62,6 +65,14 @@ export default function DemandChart() {
             dataKey="blocked"
             stroke="#ef4444"
             name="阻塞次数"
+            strokeWidth={1.5}
+            dot={false}
+          />
+          <Line
+            type="monotone"
+            dataKey="pressure"
+            stroke="#f59e0b"
+            name={selectedStationId !== null ? '站点压力' : '平均压力'}
             strokeWidth={1.5}
             dot={false}
           />

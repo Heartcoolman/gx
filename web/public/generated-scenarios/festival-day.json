@@ -1,0 +1,41 @@
+{
+  "version": "2.0.0",
+  "scenario": {
+    "id": "festival-day",
+    "label": "活动日",
+    "description": "傍晚大型活动让运动场和校门成为热点，晚高峰和短时溢出都更明显。",
+    "dayKind": "holiday",
+    "seed": 20260317,
+    "weatherTimeline": [
+      {
+        "label": "活动日晴朗",
+        "weather": "clear"
+      }
+    ],
+    "events": [
+      "整点换课潮",
+      "午餐高峰",
+      "校园活动日"
+    ]
+  },
+  "syntheticTripCorpus": [
+    {
+      "dayIndex": 0,
+      "expectedTrips": 520,
+      "dominantWeather": "clear",
+      "highlightedEvents": [
+        "校园活动日",
+        "午餐高峰"
+      ]
+    },
+    {
+      "dayIndex": 1,
+      "expectedTrips": 538,
+      "dominantWeather": "clear",
+      "highlightedEvents": [
+        "整点换课潮",
+        "校园活动日"
+      ]
+    }
+  ]
+}

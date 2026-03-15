@@ -1,0 +1,48 @@
+{
+  "version": "2.0.0",
+  "scenario": {
+    "id": "weekend-freeplay",
+    "label": "周末休闲",
+    "description": "学习通勤减弱，运动、社交和短途餐饮出行更分散。",
+    "dayKind": "saturday",
+    "seed": 20260318,
+    "weatherTimeline": [
+      {
+        "label": "周末清晨",
+        "weather": "clear"
+      },
+      {
+        "label": "周末午后",
+        "weather": "clear"
+      },
+      {
+        "label": "周末夜晚",
+        "weather": "cloudy"
+      }
+    ],
+    "events": [
+      "整点换课潮",
+      "午餐高峰",
+      "周末运动热区"
+    ]
+  },
+  "syntheticTripCorpus": [
+    {
+      "dayIndex": 0,
+      "expectedTrips": 356,
+      "dominantWeather": "clear",
+      "highlightedEvents": [
+        "周末运动热区",
+        "午餐高峰"
+      ]
+    },
+    {
+      "dayIndex": 1,
+      "expectedTrips": 369,
+      "dominantWeather": "cloudy",
+      "highlightedEvents": [
+        "周末运动热区"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "version": "2.0.0",
+  "scenario": {
+    "id": "weekday-spring",
+    "label": "工作日常态",
+    "description": "常规教学周的晴朗工作日，换课潮、午餐峰和闭馆回流明显。",
+    "dayKind": "weekday",
+    "seed": 20260314,
+    "weatherTimeline": [
+      {
+        "label": "清晨晴朗",
+        "weather": "clear"
+      },
+      {
+        "label": "白天舒适",
+        "weather": "clear"
+      },
+      {
+        "label": "夜间微凉",
+        "weather": "cloudy"
+      }
+    ],
+    "events": [
+      "整点换课潮",
+      "午餐高峰",
+      "图书馆闭馆回流"
+    ]
+  },
+  "syntheticTripCorpus": [
+    {
+      "dayIndex": 0,
+      "expectedTrips": 428,
+      "dominantWeather": "clear",
+      "highlightedEvents": [
+        "整点换课潮",
+        "午餐高峰"
+      ]
+    },
+    {
+      "dayIndex": 1,
+      "expectedTrips": 441,
+      "dominantWeather": "clear",
+      "highlightedEvents": [
+        "午餐高峰",
+        "图书馆闭馆回流"
+      ]
+    }
+  ]
+}

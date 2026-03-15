@@ -7,14 +7,16 @@ import StationPopup from './StationPopup';
 interface Props {
   station: Station;
   bikes: number;
+  brokenBikes: number;
+  pressure: number;
 }
 
-export default function StationMarker({ station, bikes }: Props) {
+export default function StationMarker({ station, bikes, brokenBikes, pressure }: Props) {
   const { selectStation, selectedStationId } = useUIStore();
   const ratio = station.capacity > 0 ? bikes / station.capacity : 0;
   const color = bikeRatioColor(ratio);
   const isSelected = selectedStationId === station.id;
-  const radius = 8 + (station.capacity / 30) * 8;
+  const radius = 8 + Math.log2(station.capacity / 15) * 4;
 
   return (
     <CircleMarker
@@ -35,9 +37,10 @@ export default function StationMarker({ station, bikes }: Props) {
         <div style={{ textAlign: 'center', fontSize: 11, lineHeight: 1.3 }}>
           <div style={{ fontWeight: 600 }}>{station.name}</div>
           <div>{bikes}/{station.capacity}</div>
+          <div style={{ color: '#64748b' }}>坏车 {brokenBikes} / 压力 {(pressure * 100).toFixed(0)}%</div>
         </div>
       </Tooltip>
-      <StationPopup station={station} bikes={bikes} />
+      <StationPopup station={station} bikes={bikes} brokenBikes={brokenBikes} pressure={pressure} />
     </CircleMarker>
   );
 }

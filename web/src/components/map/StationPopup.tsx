@@ -8,13 +8,16 @@ import { useSimulationStore } from '../../store/simulationStore';
 interface Props {
   station: Station;
   bikes: number;
+  brokenBikes: number;
+  pressure: number;
 }
 
-export default function StationPopup({ station, bikes }: Props) {
-  const { latestTargets } = useSimulationStore();
+export default function StationPopup({ station, bikes, brokenBikes, pressure }: Props) {
+  const { maintenanceBikes, snapshots } = useSimulationStore();
   const ratio = station.capacity > 0 ? bikes / station.capacity : 0;
   const color = bikeRatioColor(ratio);
-  const target = latestTargets.find(t => t.station_id === station.id);
+  const latestSnapshot = snapshots[snapshots.length - 1];
+  const runtime = latestSnapshot?.stationStates.find((state) => state.stationId === station.id);
 
   return (
     <Popup>
@@ -33,6 +36,12 @@ export default function StationPopup({ station, bikes }: Props) {
               <td style={{ textAlign: 'right', fontWeight: 600, color }}>{bikes}</td>
             </tr>
             <tr>
+              <td style={{ color: '#64748b' }}>坏车 / 维修</td>
+              <td style={{ textAlign: 'right', color: '#ef4444' }}>
+                {brokenBikes} / {maintenanceBikes[station.id] ?? 0}
+              </td>
+            </tr>
+            <tr>
               <td style={{ color: '#64748b' }}>总桩位</td>
               <td style={{ textAlign: 'right' }}>{station.capacity}</td>
             </tr>
@@ -44,15 +53,21 @@ export default function StationPopup({ station, bikes }: Props) {
               <td style={{ color: '#64748b' }}>状态</td>
               <td style={{ textAlign: 'right', color }}>{bikeRatioLabel(ratio)}</td>
             </tr>
-            {target && (
+            <tr>
+              <td style={{ color: '#64748b' }}>压力指数</td>
+              <td style={{ textAlign: 'right', color: pressure > 0.7 ? '#ef4444' : '#0f766e' }}>
+                {(pressure * 100).toFixed(0)}%
+              </td>
+            </tr>
+            {runtime && (
               <>
                 <tr>
-                  <td style={{ color: '#64748b' }}>目标车辆</td>
-                  <td style={{ textAlign: 'right' }}>{target.target_bikes}</td>
+                  <td style={{ color: '#64748b' }}>本时段未满足</td>
+                  <td style={{ textAlign: 'right' }}>{runtime.recentUnmetDemand}</td>
                 </tr>
                 <tr>
-                  <td style={{ color: '#64748b' }}>高峰期</td>
-                  <td style={{ textAlign: 'right' }}>{target.is_peak ? '是' : '否'}</td>
+                  <td style={{ color: '#64748b' }}>回停溢出</td>
+                  <td style={{ textAlign: 'right' }}>{runtime.overflowReturns}</td>
                 </tr>
               </>
             )}

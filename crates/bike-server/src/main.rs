@@ -14,7 +14,9 @@ use state::AppState;
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("bike_server=info".parse().unwrap()))
+        .with_env_filter(
+            EnvFilter::from_default_env().add_directive("bike_server=info".parse().unwrap()),
+        )
         .init();
 
     let state = AppState::new();

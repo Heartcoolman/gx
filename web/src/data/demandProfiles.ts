@@ -1,19 +1,26 @@
 import type { StationCategory } from '../types/station';
 
-// 每个类别96个时段的pickup/return频率系数
+// 每个类别1440个时段（1分钟/slot）的pickup/return频率系数
 // 值为该时段相对于日均需求的倍数
 
 interface DemandProfile {
-  pickup: number[];  // 96 slots
-  return_: number[]; // 96 slots
+  pickup: number[];  // 1440 slots
+  return_: number[]; // 1440 slots
 }
 
+/**
+ * Build a smooth 1440-slot profile from peak definitions.
+ * Peak start/end are specified in 15-minute slot units for authoring convenience,
+ * then internally mapped to 1440 1-minute slots.
+ */
 function makeProfile(peakDef: Array<[number, number, number, number]>): number[] {
-  const arr = new Array(96).fill(0.1); // baseline
-  for (const [startSlot, endSlot, peakVal, _] of peakDef) {
+  const arr = new Array(1440).fill(0.1); // baseline
+  for (const [startSlot15, endSlot15, peakVal, _] of peakDef) {
+    const startSlot = startSlot15 * 15;
+    const endSlot = endSlot15 * 15 + 14; // inclusive end
     const mid = (startSlot + endSlot) / 2;
     const halfWidth = (endSlot - startSlot) / 2;
-    for (let i = startSlot; i <= endSlot && i < 96; i++) {
+    for (let i = startSlot; i <= endSlot && i < 1440; i++) {
       const dist = Math.abs(i - mid) / halfWidth;
       arr[i] = peakVal * (1 - 0.5 * dist * dist);
     }
@@ -82,12 +89,16 @@ export const CATEGORY_AFFINITY: Record<StationCategory, Record<StationCategory, 
   },
 };
 
-// 每个站点每时段的基准骑行次数
+// 每个站点每时段的基准骑行次数（1分钟/slot）
+// 按南昌理工24,000师生、2,000辆车校准
+// 日活用车率~25% → ~6,000人/天 × ~2.5次/人 → ~15,000次/天
+// 15,000次 / 1440时段 / 15站 ≈ 0.69次/站/时段（高峰更多）
+// 原15分钟粒度的值除以15，保持日总量不变
 export const BASE_RIDES_PER_SLOT: Record<StationCategory, number> = {
-  dormitory: 4.0,
-  academic_building: 3.0,
-  cafeteria: 2.5,
-  library: 2.0,
-  sports_field: 1.5,
-  main_gate: 1.0,
+  dormitory: 28 / 15,           // 宿舍：早晚高峰最密集
+  academic_building: 22 / 15,   // 教学楼：上下课高峰
+  cafeteria: 18 / 15,           // 食堂：三餐时段
+  library: 12 / 15,             // 图书馆：全天均匀
+  sports_field: 8 / 15,         // 运动场：下午/晚间
+  main_gate: 6 / 15,            // 大门：通勤进出
 };

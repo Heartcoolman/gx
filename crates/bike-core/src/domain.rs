@@ -68,7 +68,7 @@ pub enum DayKind {
     ExamPeriod,
 }
 
-/// A 15-minute slot within a day-kind.  `slot_index` is 0..96.
+/// A 1-minute slot within a day-kind.  `slot_index` is 0..1440.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TimeSlot {
     pub day_kind: DayKind,
@@ -76,7 +76,7 @@ pub struct TimeSlot {
 }
 
 impl TimeSlot {
-    pub const SLOTS_PER_DAY: u32 = 96;
+    pub const SLOTS_PER_DAY: u32 = 1440;
 
     pub fn advance(self, offset: u32) -> Self {
         Self {
@@ -90,7 +90,7 @@ impl TimeSlot {
     pub fn from_time(day_kind: DayKind, hour: u32, minute: u32) -> Self {
         Self {
             day_kind,
-            slot_index: hour * 4 + minute / 15,
+            slot_index: hour * 60 + minute,
         }
     }
 }

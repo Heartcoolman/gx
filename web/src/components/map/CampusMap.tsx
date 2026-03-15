@@ -9,7 +9,7 @@ import { useSimulationStore } from '../../store/simulationStore';
 import { useUIStore } from '../../store/uiStore';
 
 export default function CampusMap() {
-  const { bikes, activeRides, vehicleAnimations, latestPlan } = useSimulationStore();
+  const { bikes, brokenBikes, stationPressure, activeRides, vehicleAnimations, latestPlan } = useSimulationStore();
   const { showBikeFlows, showDispatchRoutes } = useUIStore();
 
   return (
@@ -29,6 +29,8 @@ export default function CampusMap() {
           key={station.id}
           station={station}
           bikes={bikes[station.id] ?? 0}
+          brokenBikes={brokenBikes[station.id] ?? 0}
+          pressure={stationPressure[station.id] ?? 0}
         />
       ))}
 

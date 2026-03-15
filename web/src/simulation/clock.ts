@@ -1,5 +1,5 @@
 import type { DayKind } from '../types/time';
-import { SLOTS_PER_DAY, SLOT_MINUTES } from '../types/time';
+import { SLOTS_PER_DAY } from '../types/time';
 import { SLOT_DURATION_MS } from '../data/constants';
 
 export class VirtualClock {
@@ -30,11 +30,11 @@ export class VirtualClock {
   }
 
   get hour(): number {
-    return Math.floor(this.slotIndex / 4);
+    return Math.floor(this.slotIndex / 60);
   }
 
   get minute(): number {
-    return (this.slotIndex % 4) * SLOT_MINUTES;
+    return this.slotIndex % 60;
   }
 
   /** Progress within the current slot, 0..1 */

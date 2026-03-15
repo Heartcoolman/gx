@@ -1,123 +1,104 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import AppLayout from './components/layout/AppLayout';
-import { SimulationEngine } from './simulation/engine';
+import { SimulationBridge } from './simulation/simulationBridge';
 import { useSimulationStore } from './store/simulationStore';
 import { useUIStore } from './store/uiStore';
 import type { DayKind } from './types/time';
 import './App.css';
 
 export default function App() {
-  const engineRef = useRef<SimulationEngine | null>(null);
-  const store = useSimulationStore;
+  const bridgeRef = useRef<SimulationBridge | null>(null);
 
-  const getEngine = useCallback(() => {
-    if (!engineRef.current) {
-      engineRef.current = new SimulationEngine({
-        onTick: (engine) => {
-          store.getState().setSlotIndex(engine.clock.slotIndex);
-          store.getState().setBikes([...engine.stateManager.bikes]);
-          store.getState().setActiveRides([...engine.stateManager.activeRides]);
-          store.getState().setMetrics({
-            totalRides: engine.stateManager.totalRides,
-            blockedCount: engine.stateManager.blockedCount,
-            dispatchCount: engine.dispatchCount,
-            totalBikesMoved: engine.totalBikesMoved,
-          });
-          store.getState().setVehicleAnimations([...engine.activeVehicleAnimations]);
-        },
-        onSlotChange: () => {},
-        onRebalance: (resp) => {
-          store.getState().setBackendResults(
-            resp.targets,
-            resp.dispatch_plan,
-            resp.incentives,
-          );
-        },
-        onSnapshot: (snap) => {
-          store.getState().addSnapshot(snap);
-        },
-      });
-      // Set initial bikes
-      store.getState().setBikes([...engineRef.current.stateManager.bikes]);
+  const getBridge = useCallback(() => {
+    if (!bridgeRef.current) {
+      bridgeRef.current = new SimulationBridge();
     }
-    return engineRef.current;
+    return bridgeRef.current;
   }, []);
 
-  // Initialize engine on mount
   useEffect(() => {
-    getEngine();
-  }, [getEngine]);
+    getBridge();
+    return () => {
+      bridgeRef.current?.dispose();
+      bridgeRef.current = null;
+    };
+  }, [getBridge]);
 
-  // Wire up control callbacks via a global ref
   useEffect(() => {
-    const w = window as unknown as Record<string, unknown>;
-    w.__simEngine = getEngine;
-  }, [getEngine]);
+    const globalObject = window as unknown as Record<string, unknown>;
+    globalObject.__simBridge = getBridge;
+  }, [getBridge]);
 
   return <AppLayout />;
 }
 
-// Export helpers for SimulationControls to use
 export function useEngineControls() {
-  const setEngineState = useSimulationStore(s => s.setEngineState);
-  const setSpeed = useSimulationStore(s => s.setSpeed);
-  const setDayKind = useSimulationStore(s => s.setDayKind);
-  const setDispatchEnabled = useSimulationStore(s => s.setDispatchEnabled);
+  const setEngineState = useSimulationStore((state) => state.setEngineState);
+  const setSpeed = useSimulationStore((state) => state.setSpeed);
+  const setDayKind = useSimulationStore((state) => state.setDayKind);
+  const setDispatchEnabled = useSimulationStore((state) => state.setDispatchEnabled);
   const { setIsWarming } = useUIStore();
 
-  const getEngine = (): SimulationEngine | null => {
-    return ((window as unknown as Record<string, unknown>).__simEngine as (() => SimulationEngine) | undefined)?.() ?? null;
+  const getBridge = (): SimulationBridge | null => {
+    return ((window as unknown as Record<string, unknown>).__simBridge as (() => SimulationBridge) | undefined)?.() ?? null;
   };
 
   const play = async () => {
-    const engine = getEngine();
-    if (!engine) return;
+    const bridge = getBridge();
+    if (!bridge) return;
 
-    if (engine.state === 'idle') {
+    const engineState = useSimulationStore.getState().engineState;
+    if (engineState === 'idle') {
       setIsWarming(true);
       try {
-        await engine.warmup();
-      } catch { /* ignore */ }
+        await bridge.warmup();
+      } catch {
+        // The local compiler warmup should not block the UI.
+      }
       setIsWarming(false);
-      engine.start();
-    } else if (engine.state === 'paused') {
-      engine.resume();
+      bridge.start();
+    } else if (engineState === 'paused') {
+      bridge.resume();
     }
     setEngineState('running');
   };
 
   const pause = () => {
-    getEngine()?.pause();
+    getBridge()?.pause();
     setEngineState('paused');
   };
 
   const step = () => {
-    getEngine()?.step();
+    getBridge()?.step();
   };
 
   const reset = (dayKind?: DayKind) => {
-    const engine = getEngine();
-    if (!engine) return;
-    engine.reset(dayKind);
+    const bridge = getBridge();
+    if (!bridge) return;
+    bridge.reset(dayKind);
     setEngineState('idle');
-    useSimulationStore.getState().resetSnapshots();
-    useSimulationStore.getState().setBackendResults([], null, []);
   };
 
   const changeSpeed = (speed: number) => {
-    getEngine()?.setSpeed(speed);
+    getBridge()?.setSpeed(speed);
     setSpeed(speed);
   };
 
-  const changeDayKind = (dk: DayKind) => {
-    getEngine()?.setDayKind(dk);
-    setDayKind(dk);
+  const changeDayKind = (dayKind: DayKind) => {
+    getBridge()?.setDayKind(dayKind);
+    setDayKind(dayKind);
   };
 
   const toggleDispatch = (enabled: boolean) => {
-    getEngine()?.setDispatchEnabled(enabled);
+    getBridge()?.setDispatchEnabled(enabled);
     setDispatchEnabled(enabled);
   };
 
-  return { play, pause, step, reset, changeSpeed, changeDayKind, toggleDispatch };
+  const changeScenario = (scenarioId: string) => {
+    const bridge = getBridge();
+    if (!bridge) return;
+    bridge.setScenario(scenarioId);
+  };
+
+  return { play, pause, step, reset, changeSpeed, changeDayKind, toggleDispatch, changeScenario };
 }

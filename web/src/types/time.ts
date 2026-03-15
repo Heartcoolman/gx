@@ -4,20 +4,20 @@ export type DayKind = 'weekday' | 'saturday' | 'sunday' | 'holiday' | 'exam_peri
 
 export interface TimeSlot {
   day_kind: DayKind;
-  slot_index: number; // 0..96
+  slot_index: number; // 0..1440
 }
 
-export const SLOTS_PER_DAY = 96;
-export const SLOT_MINUTES = 15;
+export const SLOTS_PER_DAY = 1440;
+export const SLOT_MINUTES = 1;
 
 export function slotToTime(slotIndex: number): string {
-  const hour = Math.floor(slotIndex / 4);
-  const minute = (slotIndex % 4) * 15;
+  const hour = Math.floor(slotIndex / 60);
+  const minute = slotIndex % 60;
   return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
 }
 
 export function timeToSlot(hour: number, minute: number): number {
-  return hour * 4 + Math.floor(minute / 15);
+  return hour * 60 + minute;
 }
 
 export const DAY_KIND_LABELS: Record<DayKind, string> = {

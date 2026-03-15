@@ -4,7 +4,7 @@ use thiserror::Error;
 pub enum CoreError {
     #[error("station {0} not found")]
     StationNotFound(u32),
-    #[error("invalid time slot index {0} (must be 0..96)")]
+    #[error("invalid time slot index {0} (must be 0..1440)")]
     InvalidSlotIndex(u32),
     #[error("no vehicles available for dispatch")]
     NoVehicles,

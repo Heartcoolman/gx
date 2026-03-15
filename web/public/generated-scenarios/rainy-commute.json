@@ -1,0 +1,49 @@
+{
+  "version": "2.0.0",
+  "scenario": {
+    "id": "rainy-commute",
+    "label": "雨天通勤",
+    "description": "全天降雨叠加寒潮，短途保留，长距离和运动需求下降，坏车率更高。",
+    "dayKind": "weekday",
+    "seed": 20260315,
+    "weatherTimeline": [
+      {
+        "label": "清晨多云",
+        "weather": "cloudy"
+      },
+      {
+        "label": "日间降雨",
+        "weather": "rain"
+      },
+      {
+        "label": "夜间寒潮",
+        "weather": "cold_front"
+      }
+    ],
+    "events": [
+      "整点换课潮",
+      "午餐高峰",
+      "图书馆闭馆回流"
+    ]
+  },
+  "syntheticTripCorpus": [
+    {
+      "dayIndex": 0,
+      "expectedTrips": 352,
+      "dominantWeather": "rain",
+      "highlightedEvents": [
+        "整点换课潮",
+        "午餐高峰"
+      ]
+    },
+    {
+      "dayIndex": 1,
+      "expectedTrips": 366,
+      "dominantWeather": "rain",
+      "highlightedEvents": [
+        "午餐高峰",
+        "图书馆闭馆回流"
+      ]
+    }
+  ]
+}

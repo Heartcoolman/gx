@@ -76,10 +76,10 @@ export default function SimulationControls() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-main)' }}>
-              调度算法
+              外部调度适配器
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-              {dispatchEnabled ? '已启用 - 每30分钟进行重平衡' : '已关闭 - 自然流动模式'}
+              {dispatchEnabled ? '已启用 - 作为可选插件接入' : '默认关闭 - 主仿真不依赖外部调度'}
             </div>
           </div>
           <div

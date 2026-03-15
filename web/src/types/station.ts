@@ -32,3 +32,12 @@ export const CATEGORY_LABELS: Record<StationCategory, string> = {
   sports_field: '运动场',
   main_gate: '大门',
 };
+
+export const CATEGORY_ORDER: StationCategory[] = [
+  'dormitory',
+  'academic_building',
+  'cafeteria',
+  'library',
+  'sports_field',
+  'main_gate',
+];

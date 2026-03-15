@@ -1,0 +1,49 @@
+{
+  "version": "2.0.0",
+  "scenario": {
+    "id": "exam-week",
+    "label": "考试周",
+    "description": "图书馆和教学区压力明显上升，晚间回宿舍延后，需求更集中。",
+    "dayKind": "exam_period",
+    "seed": 20260316,
+    "weatherTimeline": [
+      {
+        "label": "阴天备考",
+        "weather": "cloudy"
+      },
+      {
+        "label": "午后阵雨",
+        "weather": "rain"
+      },
+      {
+        "label": "夜间阴凉",
+        "weather": "cloudy"
+      }
+    ],
+    "events": [
+      "整点换课潮",
+      "午餐高峰",
+      "考试周高压"
+    ]
+  },
+  "syntheticTripCorpus": [
+    {
+      "dayIndex": 0,
+      "expectedTrips": 448,
+      "dominantWeather": "cloudy",
+      "highlightedEvents": [
+        "考试周高压",
+        "午餐高峰"
+      ]
+    },
+    {
+      "dayIndex": 1,
+      "expectedTrips": 457,
+      "dominantWeather": "rain",
+      "highlightedEvents": [
+        "整点换课潮",
+        "考试周高压"
+      ]
+    }
+  ]
+}

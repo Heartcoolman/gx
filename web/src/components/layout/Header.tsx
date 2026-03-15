@@ -2,7 +2,14 @@ import { useSimulationStore } from '../../store/simulationStore';
 import { slotToTime, DAY_KIND_LABELS, SLOTS_PER_DAY } from '../../types/time';
 
 export default function Header() {
-  const { slotIndex, dayKind, engineState } = useSimulationStore();
+  const {
+    slotIndex,
+    dayKind,
+    engineState,
+    scenarioLabel,
+    activeWeatherLabel,
+    activeEvents,
+  } = useSimulationStore();
   const time = slotToTime(slotIndex);
 
   return (
@@ -57,6 +64,43 @@ export default function Header() {
         }}>
           {DAY_KIND_LABELS[dayKind]}
         </span>
+        <span style={{
+          background: '#ecfeff',
+          color: '#0f766e',
+          border: '1px solid #a5f3fc',
+          padding: '6px 12px',
+          borderRadius: 'var(--radius-md)',
+          maxWidth: 180,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}>
+          {scenarioLabel}
+        </span>
+        <span style={{
+          background: '#f1f5f9',
+          color: '#475569',
+          border: '1px solid #cbd5e1',
+          padding: '6px 12px',
+          borderRadius: 'var(--radius-md)',
+        }}>
+          {activeWeatherLabel}
+        </span>
+        {activeEvents[0] && (
+          <span style={{
+            background: '#fef3c7',
+            color: '#92400e',
+            border: '1px solid #fcd34d',
+            padding: '6px 12px',
+            borderRadius: 'var(--radius-md)',
+            maxWidth: 180,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}>
+            {activeEvents[0]}
+          </span>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginLeft: 8 }}>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>当前时段</span>
           <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{slotIndex} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>/ {SLOTS_PER_DAY}</span></span>

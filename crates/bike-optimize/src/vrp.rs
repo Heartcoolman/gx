@@ -37,22 +37,33 @@ pub(crate) fn optimize_routes(
     sorted_orders.sort_by(|a, b| b.count.cmp(&a.count));
 
     for order in &sorted_orders {
-        // Assign to the vehicle with the most remaining capacity.
         let best_vi = vehicle_load
             .iter()
             .enumerate()
-            .min_by_key(|(vi, &load)| {
-                let remaining = vehicles[*vi].capacity.saturating_sub(load);
-                // Prefer the one with most remaining capacity.
-                // Use a large value minus remaining so min_by_key picks the largest.
-                u32::MAX - remaining
+            .filter_map(|(vi, &load)| {
+                let capacity = vehicles[vi].capacity;
+                if load + order.count > capacity {
+                    return None;
+                }
+                let start_index = vehicles[vi]
+                    .current_position
+                    .0
+                    .min(distance_matrix.len().saturating_sub(1) as u32)
+                    as usize;
+                let deadhead = distance_matrix
+                    .get(start_index)
+                    .and_then(|row| row.get(order.from_index))
+                    .copied()
+                    .unwrap_or(f64::MAX);
+                Some((vi, deadhead, capacity - (load + order.count)))
             })
-            .map(|(vi, _)| vi)
-            .unwrap_or(0);
+            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap().then_with(|| a.2.cmp(&b.2)))
+            .map(|(vi, _, _)| vi);
 
-        vehicle_orders[best_vi].push(order);
-        // Track peak load (simplified: each order adds to load).
-        vehicle_load[best_vi] += order.count;
+        if let Some(best_vi) = best_vi {
+            vehicle_orders[best_vi].push(order);
+            vehicle_load[best_vi] += order.count;
+        }
     }
 
     let mut routes = Vec::new();
@@ -227,7 +238,7 @@ fn nearest_neighbor_sort(stops: &mut Vec<&VrpStop>, start: usize, dm: &[Vec<f64>
     }
 }
 
-/// 2-opt local improvement.
+/// 2-opt local improvement with iteration cap for large-scale scenarios.
 fn two_opt_improve<'a>(
     mut route: Vec<&'a VrpStop>,
     depot: usize,
@@ -252,8 +263,11 @@ fn two_opt_improve<'a>(
     };
 
     let mut improved = true;
-    while improved {
+    let mut iterations = 0;
+    const MAX_ITERATIONS: usize = 50;
+    while improved && iterations < MAX_ITERATIONS {
         improved = false;
+        iterations += 1;
         let n = route.len();
         for i in 0..n.saturating_sub(1) {
             for j in (i + 1)..n {
@@ -340,10 +354,90 @@ mod tests {
         let routes = optimize_routes(&orders, &vehicles, &dm);
         // Each vehicle should have both pickup and dropoff.
         for route in &routes {
-            let has_pickup = route.stops.iter().any(|s| matches!(s.action, StopAction::Pickup));
-            let has_dropoff = route.stops.iter().any(|s| matches!(s.action, StopAction::Dropoff));
+            let has_pickup = route
+                .stops
+                .iter()
+                .any(|s| matches!(s.action, StopAction::Pickup));
+            let has_dropoff = route
+                .stops
+                .iter()
+                .any(|s| matches!(s.action, StopAction::Dropoff));
             assert!(has_pickup, "vehicle {} missing pickup", route.vehicle_id);
             assert!(has_dropoff, "vehicle {} missing dropoff", route.vehicle_id);
         }
+    }
+
+    #[test]
+    fn test_vehicle_capacity_is_not_exceeded() {
+        let orders = vec![
+            MoveOrder {
+                from: StationId(1),
+                from_index: 1,
+                to: StationId(0),
+                to_index: 0,
+                count: 9,
+            },
+            MoveOrder {
+                from: StationId(2),
+                from_index: 2,
+                to: StationId(0),
+                to_index: 0,
+                count: 8,
+            },
+        ];
+        let vehicles = vec![DispatchVehicle {
+            id: 1,
+            capacity: 10,
+            current_position: StationId(0),
+        }];
+        let dm = vec![
+            vec![0.0, 500.0, 800.0],
+            vec![500.0, 0.0, 600.0],
+            vec![800.0, 600.0, 0.0],
+        ];
+
+        let routes = optimize_routes(&orders, &vehicles, &dm);
+
+        assert_eq!(routes.len(), 1);
+        let moved: u32 = routes[0]
+            .stops
+            .iter()
+            .filter(|s| matches!(s.action, StopAction::Pickup))
+            .map(|s| s.bike_count)
+            .sum();
+        assert!(moved <= 10);
+    }
+
+    #[test]
+    fn test_assignment_prefers_nearest_vehicle_start() {
+        let orders = vec![MoveOrder {
+            from: StationId(2),
+            from_index: 2,
+            to: StationId(0),
+            to_index: 0,
+            count: 6,
+        }];
+        let vehicles = vec![
+            DispatchVehicle {
+                id: 1,
+                capacity: 10,
+                current_position: StationId(1),
+            },
+            DispatchVehicle {
+                id: 2,
+                capacity: 10,
+                current_position: StationId(2),
+            },
+        ];
+        let dm = vec![
+            vec![0.0, 500.0, 800.0],
+            vec![500.0, 0.0, 300.0],
+            vec![800.0, 300.0, 0.0],
+        ];
+
+        let routes = optimize_routes(&orders, &vehicles, &dm);
+
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].vehicle_id, 2);
     }
 }

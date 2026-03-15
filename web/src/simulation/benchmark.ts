@@ -1,12 +1,13 @@
-import { StationStateManager } from './stateManager';
-import { generateDemand, generateFullDayHistory } from './demandGenerator';
-import { distanceMatrix } from './distanceMatrix';
-import { observeRides, rebalanceCycle, resetPredictor } from '../api/client';
-import { updateConfig, getConfig } from '../api/client';
-import { STATIONS } from '../data/stations';
-import { seedRandom, clearSeed } from './rng';
+/**
+ * Benchmark module — thin wrapper that runs the heavy simulation
+ * in a Web Worker to keep the browser UI fully responsive.
+ *
+ * v2: Auto-tune uses a Worker pool for parallel candidate evaluation.
+ */
 import type { DayKind } from '../types/time';
 import type { Snapshot } from './stateManager';
+import { useSimEnvStore } from '../store/simEnvStore';
+import type { WorkerRequest, WorkerResponse } from './benchmarkWorker';
 
 export interface BenchmarkResult {
   totalRides: number;
@@ -32,167 +33,22 @@ export interface BenchmarkProgress {
 export interface TuningParams {
   vehicleCount: number;
   vehicleCapacity: number;
-  rebalanceIntervalSlots: number;
+  rebalanceIntervalMinutes: number;
   safetyBufferRatio: number;
   peakMultiplier: number;
   predictionHorizonSlots: number;
+  peakPercentile: number;
 }
 
 export const DEFAULT_PARAMS: TuningParams = {
-  vehicleCount: 3,
-  vehicleCapacity: 15,
-  rebalanceIntervalSlots: 1,
-  safetyBufferRatio: 0.35,
-  peakMultiplier: 2.0,
-  predictionHorizonSlots: 6,
+  vehicleCount: 5,
+  vehicleCapacity: 20,
+  rebalanceIntervalMinutes: 15,
+  safetyBufferRatio: 0.5,
+  peakMultiplier: 2.5,
+  predictionHorizonSlots: 8,
+  peakPercentile: 0.8,
 };
-
-/**
- * Run one benchmark phase with given parameters.
- */
-async function runPhase(
-  dayKind: DayKind,
-  totalSlots: number,
-  dispatchEnabled: boolean,
-  params: TuningParams,
-  onProgress: (slot: number) => void,
-  seed: number = 42,
-): Promise<BenchmarkResult> {
-  // Seed the PRNG so every phase generates the same demand sequence
-  seedRandom(seed);
-  const sm = new StationStateManager();
-  let dispatchCount = 0;
-  let totalBikesMoved = 0;
-  let slotsSinceRebalance = 0;
-
-  // Apply backend config
-  if (dispatchEnabled) {
-    try {
-      const cfg = await getConfig();
-      await updateConfig({
-        ...cfg,
-        safety_buffer_ratio: params.safetyBufferRatio,
-        peak_multiplier: params.peakMultiplier,
-        prediction_horizon_slots: params.predictionHorizonSlots,
-        dispatch_vehicle_count: params.vehicleCount,
-        dispatch_vehicle_capacity: params.vehicleCapacity,
-        rebalance_interval_minutes: params.rebalanceIntervalSlots * 15,
-      });
-    } catch { /* noop */ }
-
-    // Warmup predictor with multiple passes to let EWMA converge
-    for (let pass = 0; pass < 5; pass++) {
-      seedRandom(seed + 1000 + pass);
-      const history = generateFullDayHistory(new Date().toISOString());
-      for (let s = 0; s < 96; s++) {
-        if (history[s].length > 0) {
-          try { await observeRides({ records: history[s], day_kind: dayKind }); } catch { /* noop */ }
-        }
-      }
-    }
-    // Reset to the main seed for the actual simulation
-    seedRandom(seed);
-  }
-
-  for (let i = 0; i < totalSlots; i++) {
-    const slotIndex = i % 96;
-
-    const baseTime = new Date();
-    baseTime.setHours(0, 0, 0, 0);
-    const slotTimeMs = baseTime.getTime() + slotIndex * 15 * 60 * 1000;
-    const records = generateDemand(slotIndex, new Date(slotTimeMs).toISOString());
-
-    sm.processDepartures(records);
-    sm.processArrivals(slotTimeMs + 15 * 60 * 1000);
-
-    if (dispatchEnabled && records.length > 0) {
-      try { await observeRides({ records, day_kind: dayKind }); } catch { /* noop */ }
-    }
-
-    slotsSinceRebalance++;
-
-    if (dispatchEnabled && slotsSinceRebalance >= params.rebalanceIntervalSlots) {
-      slotsSinceRebalance = 0;
-      try {
-        const vehicles = Array.from({ length: params.vehicleCount }, (_, vi) => ({
-          id: vi,
-          capacity: params.vehicleCapacity,
-          current_position: 0,
-        }));
-        const resp = await rebalanceCycle({
-          stations: STATIONS,
-          current_status: sm.buildStatus(),
-          distance_matrix: distanceMatrix,
-          vehicles,
-          current_slot: { day_kind: dayKind, slot_index: slotIndex },
-        });
-        sm.applyDispatchPlan(resp.dispatch_plan);
-        dispatchCount++;
-        totalBikesMoved += resp.dispatch_plan.total_bikes_moved;
-      } catch { /* noop */ }
-    }
-
-    sm.takeSnapshot(slotIndex);
-    onProgress(i + 1);
-
-    if (i % 4 === 0) {
-      await new Promise(r => setTimeout(r, 0));
-    }
-  }
-
-  // Restore non-deterministic random after benchmark phase
-  clearSeed();
-
-  const ratios = STATIONS.map((st) => sm.bikes[st.id] / st.capacity);
-  const mean = ratios.reduce((a, b) => a + b, 0) / ratios.length;
-  const variance = ratios.reduce((s, r) => s + (r - mean) ** 2, 0) / ratios.length;
-  const totalAttempts = sm.totalRides + sm.blockedCount;
-
-  return {
-    totalRides: sm.totalRides,
-    blockedCount: sm.blockedCount,
-    blockRate: totalAttempts > 0 ? sm.blockedCount / totalAttempts : 0,
-    dispatchCount,
-    totalBikesMoved,
-    bikeStdDev: Math.sqrt(variance),
-    satisfactionRate: totalAttempts > 0 ? sm.totalRides / totalAttempts : 1,
-    snapshots: [...sm.snapshots],
-    finalBikes: [...sm.bikes],
-  };
-}
-
-/**
- * Run the full A/B benchmark with given params.
- * Both phases use the same `seed` so they face identical demand sequences.
- */
-export async function runBenchmark(
-  dayKind: DayKind,
-  days: number,
-  onProgress: (p: BenchmarkProgress) => void,
-  params?: TuningParams,
-  seed: number = 42,
-): Promise<{ baseline: BenchmarkResult; optimized: BenchmarkResult }> {
-  const p = params ?? DEFAULT_PARAMS;
-  const totalSlots = days * 96;
-
-  // Reset predictor to clear any stale state from previous runs
-  try { await resetPredictor(); } catch { /* noop */ }
-
-  onProgress({ phase: 'no-dispatch', currentSlot: 0, totalSlots });
-  const baseline = await runPhase(dayKind, totalSlots, false, p, (slot) => {
-    onProgress({ phase: 'no-dispatch', currentSlot: slot, totalSlots });
-  }, seed);
-
-  onProgress({ phase: 'warmup', currentSlot: 0, totalSlots });
-  const optimized = await runPhase(dayKind, totalSlots, true, p, (slot) => {
-    onProgress({ phase: 'with-dispatch', currentSlot: slot, totalSlots });
-  }, seed);
-
-  onProgress({ phase: 'done', currentSlot: totalSlots, totalSlots });
-  return { baseline, optimized };
-}
-
-// ─── Auto-Tuning ────────────────────────────────────────────────
 
 export interface TuningIteration {
   params: TuningParams;
@@ -211,11 +67,79 @@ export interface TunerProgress {
   history: TuningIteration[];
 }
 
+// ── Worker helper ──
+
+function createBenchmarkWorker(): Worker {
+  return new Worker(
+    new URL('./benchmarkWorker.ts', import.meta.url),
+    { type: 'module' },
+  );
+}
+
+/** Maximum number of parallel workers for tuning. */
+function maxParallelWorkers(): number {
+  const cores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency
+    ? navigator.hardwareConcurrency
+    : 4;
+  return Math.max(1, Math.floor(cores / 2));
+}
+
 /**
- * Auto-tune: iteratively search for parameters that achieve
- * blockRate <= targetBlockRate and satisfactionRate >= targetSatisfaction.
+ * Run the full A/B benchmark (no-dispatch vs with-dispatch).
+ * Computation runs in a Web Worker — the main thread stays responsive.
  */
-export async function autoTune(
+export function runBenchmark(
+  dayKind: DayKind,
+  days: number,
+  onProgress: (p: BenchmarkProgress) => void,
+  params?: TuningParams,
+  seed: number = 42,
+): Promise<{ baseline: BenchmarkResult; optimized: BenchmarkResult }> {
+  const p = params ?? DEFAULT_PARAMS;
+  const simEnv = useSimEnvStore.getState();
+
+  return new Promise((resolve, reject) => {
+    const worker = createBenchmarkWorker();
+
+    worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
+      const msg = e.data;
+      if (msg.type === 'progress') {
+        onProgress({
+          phase: msg.phase as BenchmarkPhase,
+          currentSlot: msg.currentSlot,
+          totalSlots: msg.totalSlots,
+        });
+      } else if (msg.type === 'benchmarkDone') {
+        // Add empty snapshots for compatibility (worker doesn't send full snapshot data)
+        const baseline: BenchmarkResult = { ...msg.baseline, snapshots: [] };
+        const optimized: BenchmarkResult = { ...msg.optimized, snapshots: [] };
+        worker.terminate();
+        resolve({ baseline, optimized });
+      }
+    };
+
+    worker.onerror = (e) => {
+      worker.terminate();
+      reject(new Error(`Benchmark worker error: ${e.message}`));
+    };
+
+    const request: WorkerRequest = {
+      type: 'runBenchmark',
+      dayKind,
+      days,
+      params: p,
+      seed,
+      simEnv: { totalBikes: simEnv.totalBikes, demandMultiplier: simEnv.demandMultiplier, peakIntensity: simEnv.peakIntensity, noiseFactor: simEnv.noiseFactor },
+    };
+    worker.postMessage(request);
+  });
+}
+
+/**
+ * Auto-tune: iteratively search for parameters that achieve target metrics.
+ * Uses a Worker pool to evaluate candidates in parallel where possible.
+ */
+export function autoTune(
   dayKind: DayKind,
   days: number,
   targetBlockRate: number,
@@ -223,100 +147,163 @@ export async function autoTune(
   onProgress: (p: TunerProgress) => void,
   seed: number = 42,
 ): Promise<TuningIteration[]> {
-  const totalSlots = days * 96;
-  const history: TuningIteration[] = [];
-  let best: TuningIteration | null = null;
-  let expansionRounds = 0;
-  const MAX_EXPANSION_ROUNDS = 1;
+  const simEnv = useSimEnvStore.getState();
+  const poolSize = maxParallelWorkers();
 
-  // Parameter search space — systematic escalation
-  const candidates: TuningParams[] = [
-    // Round 1: moderate improvements
-    { vehicleCount: 3, vehicleCapacity: 15, rebalanceIntervalSlots: 1, safetyBufferRatio: 0.30, peakMultiplier: 2.0, predictionHorizonSlots: 4 },
-    { vehicleCount: 5, vehicleCapacity: 20, rebalanceIntervalSlots: 1, safetyBufferRatio: 0.30, peakMultiplier: 2.0, predictionHorizonSlots: 4 },
-    // Round 2: aggressive
-    { vehicleCount: 5, vehicleCapacity: 25, rebalanceIntervalSlots: 1, safetyBufferRatio: 0.35, peakMultiplier: 2.5, predictionHorizonSlots: 6 },
-    { vehicleCount: 6, vehicleCapacity: 25, rebalanceIntervalSlots: 1, safetyBufferRatio: 0.40, peakMultiplier: 2.5, predictionHorizonSlots: 6 },
-    // Round 3: very aggressive
-    { vehicleCount: 8, vehicleCapacity: 30, rebalanceIntervalSlots: 1, safetyBufferRatio: 0.45, peakMultiplier: 3.0, predictionHorizonSlots: 8 },
-    { vehicleCount: 8, vehicleCapacity: 35, rebalanceIntervalSlots: 1, safetyBufferRatio: 0.50, peakMultiplier: 3.0, predictionHorizonSlots: 8 },
-    // Round 4: maximum
-    { vehicleCount: 10, vehicleCapacity: 40, rebalanceIntervalSlots: 1, safetyBufferRatio: 0.50, peakMultiplier: 3.5, predictionHorizonSlots: 8 },
-    { vehicleCount: 10, vehicleCapacity: 40, rebalanceIntervalSlots: 1, safetyBufferRatio: 0.60, peakMultiplier: 4.0, predictionHorizonSlots: 10 },
-  ];
+  return new Promise((resolve, reject) => {
+    // Use pool-based parallel tuning
+    const worker = createBenchmarkWorker();
+    const history: TuningIteration[] = [];
+    let targetReached = false;
 
-  for (let i = 0; i < candidates.length; i++) {
-    const params = candidates[i];
+    // For parallel evaluation, we run batches of candidates simultaneously
+    if (poolSize >= 2) {
+      // Parallel mode: run multiple workers evaluating different candidates
+      const parallelWorkers: Worker[] = [];
+      const candidates = buildTuningCandidates();
+      let nextCandidate = 0;
+      let best: TuningIteration | null = null;
+      let activeWorkers = 0;
 
-    onProgress({
-      phase: 'running',
-      iteration: i + 1,
-      totalIterations: candidates.length,
-      currentSlot: 0,
-      totalSlots,
-      bestSoFar: best,
-      history: [...history],
-    });
+      const startNext = () => {
+        while (activeWorkers < poolSize && nextCandidate < candidates.length && !targetReached) {
+          const candidateIndex = nextCandidate++;
+          const params = candidates[candidateIndex];
+          activeWorkers++;
 
-    // Reset predictor before each iteration to avoid state pollution
-    try { await resetPredictor(); } catch { /* noop */ }
+          const w = createBenchmarkWorker();
+          parallelWorkers.push(w);
 
-    const result = await runPhase(dayKind, totalSlots, true, params, (slot) => {
-      onProgress({
-        phase: 'running',
-        iteration: i + 1,
-        totalIterations: candidates.length,
-        currentSlot: slot,
-        totalSlots,
-        bestSoFar: best,
-        history: [...history],
-      });
-    }, seed);
+          w.onmessage = (e: MessageEvent<WorkerResponse>) => {
+            const msg = e.data;
+            if (msg.type === 'tuningProgress') {
+              onProgress({
+                phase: 'running',
+                iteration: history.length + 1,
+                totalIterations: candidates.length,
+                currentSlot: msg.currentSlot,
+                totalSlots: msg.totalSlots,
+                bestSoFar: best,
+                history: [...history],
+              });
+            } else if (msg.type === 'benchmarkDone') {
+              const result: BenchmarkResult = { ...msg.optimized, snapshots: [] };
+              const iter: TuningIteration = { params, result };
+              history.push(iter);
+              if (!best || result.blockRate < best.result.blockRate) {
+                best = iter;
+              }
+              activeWorkers--;
+              w.terminate();
 
-    const iter: TuningIteration = { params, result };
-    history.push(iter);
+              if (result.blockRate <= targetBlockRate && result.satisfactionRate >= targetSatisfaction) {
+                targetReached = true;
+                // Terminate remaining workers
+                for (const pw of parallelWorkers) {
+                  try { pw.terminate(); } catch { /* noop */ }
+                }
+                resolve(history);
+                return;
+              }
 
-    if (!best || result.blockRate < best.result.blockRate) {
-      best = iter;
+              onProgress({
+                phase: 'running',
+                iteration: history.length,
+                totalIterations: candidates.length,
+                currentSlot: 0,
+                totalSlots: 1,
+                bestSoFar: best,
+                history: [...history],
+              });
+
+              if (nextCandidate >= candidates.length && activeWorkers === 0) {
+                resolve(history);
+                return;
+              }
+
+              startNext();
+            }
+          };
+
+          w.onerror = () => {
+            activeWorkers--;
+            w.terminate();
+            if (nextCandidate >= candidates.length && activeWorkers === 0 && !targetReached) {
+              resolve(history);
+            }
+            startNext();
+          };
+
+          const simEnvConfig = { totalBikes: simEnv.totalBikes, demandMultiplier: simEnv.demandMultiplier, peakIntensity: simEnv.peakIntensity, noiseFactor: simEnv.noiseFactor };
+          const request: WorkerRequest = {
+            type: 'runBenchmark',
+            dayKind,
+            days,
+            params,
+            seed: seed + candidateIndex,
+            simEnv: simEnvConfig,
+          };
+          w.postMessage(request);
+        }
+      };
+
+      startNext();
+    } else {
+      // Fallback: single-worker sequential tuning (original behavior)
+      worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
+        const msg = e.data;
+        if (msg.type === 'tuningProgress') {
+          const patchResult = (r: { params: TuningParams; result: Omit<BenchmarkResult, 'snapshots'> }) => ({
+            params: r.params,
+            result: { ...r.result, snapshots: [] as Snapshot[] },
+          });
+          onProgress({
+            phase: 'running',
+            iteration: msg.iteration,
+            totalIterations: msg.totalIterations,
+            currentSlot: msg.currentSlot,
+            totalSlots: msg.totalSlots,
+            bestSoFar: msg.bestSoFar ? patchResult(msg.bestSoFar) : null,
+            history: msg.history.map(patchResult),
+          });
+        } else if (msg.type === 'tuningDone') {
+          worker.terminate();
+          resolve(msg.history.map((h) => ({
+            params: h.params,
+            result: { ...h.result, snapshots: [] as Snapshot[] },
+          })));
+        }
+      };
+
+      worker.onerror = (e) => {
+        worker.terminate();
+        reject(new Error(`Tuning worker error: ${e.message}`));
+      };
+
+      const request: WorkerRequest = {
+        type: 'runTuning',
+        dayKind,
+        days,
+        targetBlockRate,
+        targetSatisfaction,
+        seed,
+        simEnv: { totalBikes: simEnv.totalBikes, demandMultiplier: simEnv.demandMultiplier, peakIntensity: simEnv.peakIntensity, noiseFactor: simEnv.noiseFactor },
+      };
+      worker.postMessage(request);
     }
-
-    // Early exit if target reached
-    if (result.blockRate <= targetBlockRate && result.satisfactionRate >= targetSatisfaction) {
-      onProgress({
-        phase: 'done',
-        iteration: i + 1,
-        totalIterations: candidates.length,
-        currentSlot: totalSlots,
-        totalSlots,
-        bestSoFar: best,
-        history,
-      });
-      return history;
-    }
-
-    // If we're in the later rounds and the best so far is close,
-    // try fine-tuning around the best parameters
-    if (i === candidates.length - 1 && best && best.result.blockRate > targetBlockRate && expansionRounds < MAX_EXPANSION_ROUNDS) {
-      expansionRounds++;
-      // Generate more candidates around the best
-      const b = best.params;
-      const extras: TuningParams[] = [
-        { ...b, vehicleCount: b.vehicleCount + 2, vehicleCapacity: b.vehicleCapacity + 5 },
-        { ...b, vehicleCount: b.vehicleCount + 4, safetyBufferRatio: Math.min(b.safetyBufferRatio + 0.1, 0.8) },
-        { ...b, vehicleCount: b.vehicleCount + 4, vehicleCapacity: b.vehicleCapacity + 10, peakMultiplier: b.peakMultiplier + 1 },
-      ];
-      candidates.push(...extras);
-    }
-  }
-
-  onProgress({
-    phase: 'done',
-    iteration: history.length,
-    totalIterations: history.length,
-    currentSlot: totalSlots,
-    totalSlots,
-    bestSoFar: best,
-    history,
   });
-  return history;
+}
+
+/** Build the default tuning candidate set. */
+function buildTuningCandidates(): TuningParams[] {
+  return [
+    { vehicleCount: 5,  vehicleCapacity: 20, rebalanceIntervalMinutes: 15, safetyBufferRatio: 0.35, peakMultiplier: 2.0, predictionHorizonSlots: 6,  peakPercentile: 0.8 },
+    { vehicleCount: 5,  vehicleCapacity: 25, rebalanceIntervalMinutes: 15, safetyBufferRatio: 0.45, peakMultiplier: 2.5, predictionHorizonSlots: 8,  peakPercentile: 0.6 },
+    { vehicleCount: 8,  vehicleCapacity: 25, rebalanceIntervalMinutes: 15, safetyBufferRatio: 0.50, peakMultiplier: 2.5, predictionHorizonSlots: 8,  peakPercentile: 0.5 },
+    { vehicleCount: 8,  vehicleCapacity: 30, rebalanceIntervalMinutes: 15, safetyBufferRatio: 0.55, peakMultiplier: 3.0, predictionHorizonSlots: 10, peakPercentile: 0.5 },
+    { vehicleCount: 10, vehicleCapacity: 30, rebalanceIntervalMinutes: 15, safetyBufferRatio: 0.60, peakMultiplier: 3.0, predictionHorizonSlots: 10, peakPercentile: 0.4 },
+    { vehicleCount: 12, vehicleCapacity: 35, rebalanceIntervalMinutes: 15, safetyBufferRatio: 0.65, peakMultiplier: 3.0, predictionHorizonSlots: 12, peakPercentile: 0.3 },
+    { vehicleCount: 12, vehicleCapacity: 35, rebalanceIntervalMinutes: 30, safetyBufferRatio: 0.65, peakMultiplier: 3.0, predictionHorizonSlots: 12, peakPercentile: 0.3 },
+    { vehicleCount: 15, vehicleCapacity: 40, rebalanceIntervalMinutes: 15, safetyBufferRatio: 0.65, peakMultiplier: 3.5, predictionHorizonSlots: 12, peakPercentile: 0.3 },
+  ];
 }

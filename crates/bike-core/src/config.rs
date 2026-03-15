@@ -20,17 +20,17 @@ pub struct SystemConfig {
 impl Default for SystemConfig {
     fn default() -> Self {
         Self {
-            time_slot_minutes: 15,
-            prediction_horizon_slots: 6,
-            ewma_alpha: 0.3,
-            safety_buffer_ratio: 0.35,
-            peak_multiplier: 2.0,
+            time_slot_minutes: 1,
+            prediction_horizon_slots: 10,
+            ewma_alpha: 0.35,
+            safety_buffer_ratio: 0.55,
+            peak_multiplier: 2.5,
             peak_percentile: 0.80,
-            dispatch_vehicle_count: 3,
-            dispatch_vehicle_capacity: 15,
-            max_incentive_discount: 50.0,
-            incentive_budget_per_hour: 500.0,
-            rebalance_interval_minutes: 30,
+            dispatch_vehicle_count: 5,
+            dispatch_vehicle_capacity: 20,
+            max_incentive_discount: 60.0,
+            incentive_budget_per_hour: 800.0,
+            rebalance_interval_minutes: 15,
         }
     }
 }

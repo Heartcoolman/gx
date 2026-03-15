@@ -8,9 +8,9 @@ import IncentivePanel from './IncentivePanel';
 const TABS = [
   { key: 'demand' as const, label: '需求趋势' },
   { key: 'distribution' as const, label: '车辆分布' },
-  { key: 'metrics' as const, label: '调度指标' },
+  { key: 'metrics' as const, label: '真实性指标' },
   { key: 'flow' as const, label: 'OD矩阵' },
-  { key: 'incentive' as const, label: '激励措施' },
+  { key: 'incentive' as const, label: '场景洞察' },
 ];
 
 export default function DashboardPanel() {

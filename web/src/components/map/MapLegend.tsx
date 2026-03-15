@@ -27,8 +27,10 @@ export default function MapLegend() {
           LEGEND_ITEMS.map(({ color, label }) =>
             `<div><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${color};margin-right:6px;vertical-align:middle;"></span>${label}</div>`
           ).join('') +
-          '<div style="margin-top:6px;font-weight:600;">调度车辆</div>' +
-          '<div><span style="color:#ef4444">●</span> 车辆1 <span style="color:#3b82f6">●</span> 车辆2 <span style="color:#22c55e">●</span> 车辆3</div>';
+          '<div style="margin-top:6px;font-weight:600;">现实度图层</div>' +
+          '<div>蓝点: 在途骑行</div>' +
+          '<div>橙色压力: 站点短时拥堵</div>' +
+          '<div>坏车/维修请看站点 tooltip</div>';
         return div;
       },
     });

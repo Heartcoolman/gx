@@ -94,7 +94,7 @@ export default function BikeFlowLayer({ rides }: Props) {
 
     draw();
 
-    const interval = setInterval(draw, 50);
+    const interval = setInterval(draw, 100);
 
     return () => {
       clearInterval(interval);

@@ -41,10 +41,10 @@ async function main() {
     process.exit(1);
   }
 
-  const totalSlots = days * 96;
+  const totalSlots = days * 1440;
   console.log(`\n${'='.repeat(60)}`);
   console.log(`  校园共享单车调度算法 A/B 对比实验 (CLI)`);
-  console.log(`  模拟天数: ${days}天 (${totalSlots} 个15分钟时段)`);
+  console.log(`  模拟天数: ${days}天 (${totalSlots} 个1分钟时段)`);
   console.log(`  随机种子: ${seed}`);
   console.log(`  日类型: ${dayKind}`);
   console.log(`  使用模块: 前端 simulation/* (与浏览器完全一致)`);
@@ -112,8 +112,8 @@ async function main() {
   console.log(`  ${'时段'.padEnd(12)}  ${'无调度'.padStart(10)}  ${'有调度'.padStart(10)}`);
   console.log('  ' + '-'.repeat(36));
   for (let hour = 0; hour < 24; hour++) {
-    const slotStart = hour * 4;
-    const slotEnd = slotStart + 4;
+    const slotStart = hour * 60;
+    const slotEnd = slotStart + 60;
     let bBlocked = 0, oBlocked = 0, bRides = 0, oRides = 0;
     for (let si = slotStart; si < Math.min(slotEnd, baseline.snapshots.length); si++) {
       const snapB = baseline.snapshots[si];

@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import SimulationControls from '../controls/SimulationControls';
 import DayKindSelector from '../controls/DayKindSelector';
+import ScenarioSelector from '../controls/ScenarioSelector';
+import ParameterTuning from '../controls/ParameterTuning';
 import StationList from '../station/StationList';
 import BenchmarkPanel from '../benchmark/BenchmarkPanel';
 
-type SidebarTab = 'sim' | 'benchmark';
+type SidebarTab = 'sim' | 'benchmark' | 'tuning';
 
 export default function Sidebar() {
   const [tab, setTab] = useState<SidebarTab>('sim');
@@ -68,6 +70,26 @@ export default function Sidebar() {
             }} />
           )}
         </button>
+        <button
+          onClick={() => setTab('tuning')}
+          style={{
+            flex: 1, padding: '14px 0', border: 'none', background: 'transparent',
+            position: 'relative',
+            color: tab === 'tuning' ? '#f59e0b' : 'var(--text-muted)',
+            fontWeight: tab === 'tuning' ? 600 : 500,
+            fontSize: 14, cursor: 'pointer',
+            transition: 'color var(--transition-normal)',
+          }}
+        >
+          调参
+          {tab === 'tuning' && (
+            <div style={{
+              position: 'absolute', bottom: 0, left: '20%', right: '20%', height: 3,
+              background: '#f59e0b', borderRadius: '3px 3px 0 0',
+              boxShadow: '0 -2px 6px rgba(245, 158, 11, 0.4)'
+            }} />
+          )}
+        </button>
       </div>
 
       {tab === 'sim' ? (
@@ -77,14 +99,21 @@ export default function Sidebar() {
             <div style={{ marginTop: 12 }}>
               <DayKindSelector />
             </div>
+            <div style={{ marginTop: 12 }}>
+              <ScenarioSelector />
+            </div>
           </div>
           <div style={{ flex: 1, overflow: 'auto' }}>
             <StationList />
           </div>
         </>
-      ) : (
+      ) : tab === 'benchmark' ? (
         <div style={{ flex: 1, overflow: 'auto' }}>
           <BenchmarkPanel />
+        </div>
+      ) : (
+        <div style={{ flex: 1, overflow: 'auto' }}>
+          <ParameterTuning />
         </div>
       )}
     </aside>

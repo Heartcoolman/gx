@@ -109,12 +109,18 @@ impl CompositePredictor {
         let pickup_dev = pickups - base_p;
         let return_dev = returns - base_r;
 
+        // Adaptive alpha: when observations diverge sharply from baseline,
+        // boost alpha temporarily to track the change faster.
+        let reference = base_p.max(base_r).max(1.0);
+        let deviation_ratio = (pickup_dev.abs() + return_dev.abs()) / reference;
+        let effective_alpha = (self.alpha + deviation_ratio * 0.12).min(0.75);
+
         let ewma = self.ewma.entry(key).or_default();
         if ewma.initialized {
             ewma.pickup_deviation =
-                self.alpha * pickup_dev + (1.0 - self.alpha) * ewma.pickup_deviation;
+                effective_alpha * pickup_dev + (1.0 - effective_alpha) * ewma.pickup_deviation;
             ewma.return_deviation =
-                self.alpha * return_dev + (1.0 - self.alpha) * ewma.return_deviation;
+                effective_alpha * return_dev + (1.0 - effective_alpha) * ewma.return_deviation;
         } else {
             ewma.pickup_deviation = pickup_dev;
             ewma.return_deviation = return_dev;
@@ -185,13 +191,13 @@ impl DemandPredictor for CompositePredictor {
             let dt = record.departure_time;
             let hour = dt.format("%H").to_string().parse::<u32>().unwrap_or(0);
             let minute = dt.format("%M").to_string().parse::<u32>().unwrap_or(0);
-            hour * 4 + minute / 15
+            hour * 60 + minute
         };
         let arrival_slot = {
             let dt = record.arrival_time;
             let hour = dt.format("%H").to_string().parse::<u32>().unwrap_or(0);
             let minute = dt.format("%M").to_string().parse::<u32>().unwrap_or(0);
-            hour * 4 + minute / 15
+            hour * 60 + minute
         };
 
         let pickup_key = (record.origin, day_kind, departure_slot);
@@ -210,6 +216,7 @@ impl DemandPredictor for CompositePredictor {
     ) -> TargetInventory {
         let mut cumulative_net: f64 = 0.0;
         let mut max_net_outflow: f64 = 0.0;
+        let mut positive_outflow_sum: f64 = 0.0;
 
         for offset in 0..config.prediction_horizon_slots {
             let future_slot = current_slot.advance(offset);
@@ -217,15 +224,22 @@ impl DemandPredictor for CompositePredictor {
             let net_outflow = pickups - returns;
             cumulative_net += net_outflow;
             max_net_outflow = max_net_outflow.max(cumulative_net);
+            positive_outflow_sum += net_outflow.max(0.0);
         }
 
-        let mut base_target = max_net_outflow.ceil() as i64;
-        let safety_buffer = (base_target as f64 * config.safety_buffer_ratio).ceil() as i64;
+        let mut base_target = max_net_outflow
+            .max((positive_outflow_sum * 0.55).ceil())
+            .ceil() as i64;
 
         let is_peak = self.is_peak(station_id, current_slot, config.peak_percentile);
         if is_peak {
             base_target = (base_target as f64 * config.peak_multiplier).ceil() as i64;
         }
+
+        let safety_floor = if is_peak { 4.0 } else { 2.0 };
+        let safety_buffer = (base_target as f64 * config.safety_buffer_ratio)
+            .ceil()
+            .max(safety_floor) as i64;
 
         let target = (base_target + safety_buffer).max(0).min(capacity as i64) as u32;
 
@@ -288,9 +302,7 @@ mod tests {
     #[test]
     fn test_ewma_convergence() {
         let mut pred = CompositePredictor::new(0.3);
-        let records: Vec<_> = (0..10)
-            .map(|_| make_record(1, 2, 8, 0, 8, 10))
-            .collect();
+        let records: Vec<_> = (0..10).map(|_| make_record(1, 2, 8, 0, 8, 10)).collect();
 
         // Feed 5 "days" with the same pattern.
         for _ in 0..5 {
@@ -336,9 +348,7 @@ mod tests {
     #[test]
     fn test_target_inventory_respects_capacity() {
         let mut pred = CompositePredictor::new(0.3);
-        let records: Vec<_> = (0..50)
-            .map(|_| make_record(1, 2, 8, 0, 8, 10))
-            .collect();
+        let records: Vec<_> = (0..50).map(|_| make_record(1, 2, 8, 0, 8, 10)).collect();
         for _ in 0..5 {
             feed_day(&mut pred, &records, DayKind::Weekday);
         }
@@ -359,15 +369,17 @@ mod tests {
         let config = SystemConfig::default();
         let slot = TimeSlot::from_time(DayKind::Weekday, 8, 0);
         let target = pred.target_inventory(StationId(1), slot, 30, &config);
-        assert_eq!(target.target_bikes, 0, "no data => zero target");
+        // With min safety buffer of 2, zero demand still yields target=2.
+        assert_eq!(
+            target.target_bikes, 2,
+            "no data => min safety buffer target"
+        );
     }
 
     #[test]
     fn test_different_day_kinds_independent() {
         let mut pred = CompositePredictor::new(0.3);
-        let records: Vec<_> = (0..10)
-            .map(|_| make_record(1, 2, 8, 0, 8, 10))
-            .collect();
+        let records: Vec<_> = (0..10).map(|_| make_record(1, 2, 8, 0, 8, 10)).collect();
         for _ in 0..3 {
             feed_day(&mut pred, &records, DayKind::Weekday);
         }
@@ -384,12 +396,8 @@ mod tests {
         // Dormitory: morning rush (lots of pickups), afternoon return (lots of returns).
         let mut pred = CompositePredictor::new(0.3);
 
-        let morning_out: Vec<_> = (0..20)
-            .map(|_| make_record(1, 2, 8, 0, 8, 10))
-            .collect();
-        let afternoon_in: Vec<_> = (0..18)
-            .map(|_| make_record(2, 1, 17, 0, 17, 10))
-            .collect();
+        let morning_out: Vec<_> = (0..20).map(|_| make_record(1, 2, 8, 0, 8, 10)).collect();
+        let afternoon_in: Vec<_> = (0..18).map(|_| make_record(2, 1, 17, 0, 17, 10)).collect();
         let mut day = morning_out.clone();
         day.extend(afternoon_in.clone());
 
@@ -398,10 +406,18 @@ mod tests {
         }
 
         let config = SystemConfig::default();
-        let morning_target =
-            pred.target_inventory(StationId(1), TimeSlot::from_time(DayKind::Weekday, 8, 0), 30, &config);
-        let afternoon_target =
-            pred.target_inventory(StationId(1), TimeSlot::from_time(DayKind::Weekday, 17, 0), 30, &config);
+        let morning_target = pred.target_inventory(
+            StationId(1),
+            TimeSlot::from_time(DayKind::Weekday, 8, 0),
+            30,
+            &config,
+        );
+        let afternoon_target = pred.target_inventory(
+            StationId(1),
+            TimeSlot::from_time(DayKind::Weekday, 17, 0),
+            30,
+            &config,
+        );
 
         // Morning needs many bikes (high outflow), afternoon needs few (inflow).
         assert!(
