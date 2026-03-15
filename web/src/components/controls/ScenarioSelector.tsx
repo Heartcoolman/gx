@@ -1,8 +1,15 @@
 import { useSimulationStore } from '../../store/simulationStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useEngineControls } from '../../App';
 
 export default function ScenarioSelector() {
-  const { availableScenarios, scenarioId, scenarioDescription, activeWeatherLabel, activeEvents } = useSimulationStore();
+  const { availableScenarios, scenarioId, scenarioDescription, activeWeatherLabel, activeEvents } = useSimulationStore(useShallow(s => ({
+    availableScenarios: s.availableScenarios,
+    scenarioId: s.scenarioId,
+    scenarioDescription: s.scenarioDescription,
+    activeWeatherLabel: s.activeWeatherLabel,
+    activeEvents: s.activeEvents,
+  })));
   const { changeScenario } = useEngineControls();
 
   return (

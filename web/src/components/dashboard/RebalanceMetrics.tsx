@@ -1,4 +1,5 @@
 import { useSimulationStore } from '../../store/simulationStore';
+import { useShallow } from 'zustand/react/shallow';
 
 export default function RebalanceMetrics() {
   const {
@@ -11,7 +12,17 @@ export default function RebalanceMetrics() {
     totalRepairsCompleted,
     totalInTransit,
     bikes,
-  } = useSimulationStore();
+  } = useSimulationStore(useShallow(s => ({
+    totalRides: s.totalRides,
+    blockedCount: s.blockedCount,
+    dispatchCount: s.dispatchCount,
+    totalBikesMoved: s.totalBikesMoved,
+    totalWalkTransfers: s.totalWalkTransfers,
+    totalOverflowEvents: s.totalOverflowEvents,
+    totalRepairsCompleted: s.totalRepairsCompleted,
+    totalInTransit: s.totalInTransit,
+    bikes: s.bikes,
+  })));
 
   const totalAttempts = totalRides + blockedCount;
   const blockRate = totalAttempts > 0 ? blockedCount / totalAttempts : 0;

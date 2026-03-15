@@ -158,6 +158,8 @@ export interface ActiveRideV2 {
   weather: WeatherKind;
   distanceMeters: number;
   overflowMeters: number;
+  /** When true, this is a short overflow re-route — force-dock on second overflow. */
+  isOverflow?: boolean;
 }
 
 export interface StationStateV2 {

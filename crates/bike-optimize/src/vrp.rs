@@ -57,7 +57,7 @@ pub(crate) fn optimize_routes(
                     .unwrap_or(f64::MAX);
                 Some((vi, deadhead, capacity - (load + order.count)))
             })
-            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap().then_with(|| a.2.cmp(&b.2)))
+            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal).then_with(|| a.2.cmp(&b.2)))
             .map(|(vi, _, _)| vi);
 
         if let Some(best_vi) = best_vi {
@@ -265,17 +265,20 @@ fn two_opt_improve<'a>(
     let mut improved = true;
     let mut iterations = 0;
     const MAX_ITERATIONS: usize = 50;
+    let mut best_dist = total_dist(&route);
     while improved && iterations < MAX_ITERATIONS {
         improved = false;
         iterations += 1;
         let n = route.len();
         for i in 0..n.saturating_sub(1) {
             for j in (i + 1)..n {
-                let mut candidate = route.clone();
-                candidate[i..=j].reverse();
-                if total_dist(&candidate) < total_dist(&route) {
-                    route = candidate;
+                route[i..=j].reverse();
+                let new_dist = total_dist(&route);
+                if new_dist < best_dist {
+                    best_dist = new_dist;
                     improved = true;
+                } else {
+                    route[i..=j].reverse(); // undo
                 }
             }
         }

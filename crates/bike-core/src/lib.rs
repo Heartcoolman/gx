@@ -5,7 +5,10 @@ pub mod error;
 pub mod incentive;
 
 pub use config::{RebalanceInput, RebalanceOutput, SystemConfig};
-pub use dispatch::*;
-pub use domain::*;
+pub use dispatch::{DispatchPlan, DispatchPriority, DispatchVehicle, RouteStop, StopAction, VehicleRoute};
+pub use domain::{
+    DayKind, DemandRecord, PredictedDemand, Station, StationCategory, StationId, StationStatus,
+    TargetInventory, TimeSlot,
+};
 pub use error::CoreError;
-pub use incentive::*;
+pub use incentive::{IncentiveReason, IncentiveType, PriceIncentive};

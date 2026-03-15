@@ -87,11 +87,14 @@ impl TimeSlot {
 
     /// Convert a chrono DateTime into a TimeSlot (uses hour/minute only; day_kind must
     /// be supplied separately).
-    pub fn from_time(day_kind: DayKind, hour: u32, minute: u32) -> Self {
-        Self {
+    pub fn from_time(day_kind: DayKind, hour: u32, minute: u32) -> Result<Self, crate::error::CoreError> {
+        if hour >= 24 || minute >= 60 {
+            return Err(crate::error::CoreError::InvalidSlotIndex(hour * 60 + minute));
+        }
+        Ok(Self {
             day_kind,
             slot_index: hour * 60 + minute,
-        }
+        })
     }
 }
 

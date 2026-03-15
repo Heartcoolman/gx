@@ -6,9 +6,13 @@ import type {
   SystemConfig,
 } from '../types/api';
 
+// Vite exposes env vars prefixed with VITE_ via import.meta.env (browser).
+// Node scripts (e.g. benchmark-cli) use process.env.API_BASE_URL instead.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const env = (globalThis as any).process?.env ?? {};
-const baseURL: string = env.API_BASE_URL ?? '/api/v1';
+const baseURL: string =
+  (import.meta as any).env?.VITE_API_BASE_URL
+  ?? (globalThis as any).process?.env?.API_BASE_URL
+  ?? '/api/v1';
 
 const http = axios.create({ baseURL, timeout: 10000 });
 

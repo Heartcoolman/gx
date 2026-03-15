@@ -42,15 +42,42 @@ function purposeCoefficient(purpose: RidePurpose): number {
   }
 }
 
-// ── Time-of-day congestion coefficient ──
+// ── Time-of-day congestion coefficient (smooth Gaussian LUT) ──
 
-function congestionCoefficient(slotIndex: number): number {
-  const hour = Math.floor(slotIndex / 60);
-  // Morning peak 7-9, lunch 11-13, afternoon 16-18
-  if ((hour >= 7 && hour <= 8) || (hour >= 11 && hour <= 12) || (hour >= 16 && hour <= 17)) {
-    return 0.85;
+/** Gaussian bump: returns depth at minute-of-day distance from center. */
+function gaussianBump(minute: number, centerMinute: number, sigmaHours: number, depth: number): number {
+  const dx = (minute - centerMinute) / (sigmaHours * 60);
+  return depth * Math.exp(-0.5 * dx * dx);
+}
+
+/**
+ * Pre-computed 1440-element lookup table (one per minute of day).
+ * Congestion = 1.0 − sum of Gaussian peaks.
+ *   Morning  7:45  (σ=0.8h, depth=0.15)
+ *   Lunch   11:45  (σ=0.7h, depth=0.12)
+ *   Evening 16:45  (σ=0.9h, depth=0.15)
+ */
+const CONGESTION_LUT: Float64Array = (() => {
+  const lut = new Float64Array(1440);
+  const peaks = [
+    { center: 7 * 60 + 45, sigma: 0.8, depth: 0.15 },
+    { center: 11 * 60 + 45, sigma: 0.7, depth: 0.12 },
+    { center: 16 * 60 + 45, sigma: 0.9, depth: 0.15 },
+  ];
+  for (let m = 0; m < 1440; m++) {
+    let reduction = 0;
+    for (const p of peaks) {
+      reduction += gaussianBump(m, p.center, p.sigma, p.depth);
+    }
+    lut[m] = 1.0 - reduction;
   }
-  return 1.0;
+  return lut;
+})();
+
+/** Exported for reuse by dispatch vehicle congestion. */
+export function congestionCoefficient(slotIndex: number): number {
+  const minute = Math.min(Math.max(slotIndex, 0), 1439);
+  return CONGESTION_LUT[minute];
 }
 
 // ── Constants ──
@@ -76,6 +103,8 @@ export interface RidingModelParams {
   purpose: RidePurpose;
   slotIndex: number;
   travelTimeMultiplier: number;
+  /** 0–1 position within the rider's activity window (0 = start, 1 = end). */
+  windowProgress?: number;
 }
 
 /**
@@ -84,14 +113,28 @@ export interface RidingModelParams {
  * Replaces the old `(distance / 3.2) * 1000 + 50_000` formula.
  */
 export function computeRealisticTravelDuration(params: RidingModelParams): number {
-  const { distanceMeters, weather, purpose, slotIndex, travelTimeMultiplier } = params;
+  const { distanceMeters, weather, purpose, slotIndex, travelTimeMultiplier, windowProgress } = params;
 
   const actualDistance = distanceMeters * PATH_DETOUR_FACTOR;
+
+  // Urgency speed tweak: late-window class riders speed up, early-window social riders slow down
+  let urgencySpeedFactor = 1.0;
+  if (windowProgress !== undefined) {
+    if (purpose === 'class' && windowProgress > 0.5) {
+      // Up to +8% speed in the last half of the window
+      urgencySpeedFactor = 1.0 + 0.08 * ((windowProgress - 0.5) / 0.5);
+    } else if (purpose === 'social' && windowProgress < 0.5) {
+      // Up to -5% speed in the first half of the window
+      urgencySpeedFactor = 1.0 - 0.05 * (1 - windowProgress / 0.5);
+    }
+  }
+
   const speed =
     baseSpeedForDistance(distanceMeters)
     * weatherCoefficient(weather)
     * purposeCoefficient(purpose)
     * congestionCoefficient(slotIndex)
+    * urgencySpeedFactor
     * speedJitter();
 
   const ridingMs = (actualDistance / speed) * 1000;

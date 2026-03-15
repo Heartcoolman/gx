@@ -1,9 +1,15 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useSimulationStore } from '../../store/simulationStore';
+import { useShallow } from 'zustand/react/shallow';
 import { STATIONS } from '../../data/stations';
 
 export default function BikeDistribution() {
-  const { bikes, brokenBikes, maintenanceBikes, stationPressure } = useSimulationStore();
+  const { bikes, brokenBikes, maintenanceBikes, stationPressure } = useSimulationStore(useShallow(s => ({
+    bikes: s.bikes,
+    brokenBikes: s.brokenBikes,
+    maintenanceBikes: s.maintenanceBikes,
+    stationPressure: s.stationPressure,
+  })));
 
   const data = STATIONS.map((st) => {
     return {

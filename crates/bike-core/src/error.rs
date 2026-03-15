@@ -10,4 +10,10 @@ pub enum CoreError {
     NoVehicles,
     #[error("configuration error: {0}")]
     Config(String),
+    #[error("invalid distance matrix: {0}")]
+    InvalidDistanceMatrix(String),
+    #[error("invalid vehicle capacity: {0}")]
+    InvalidVehicleCapacity(String),
+    #[error("invalid config: {0}")]
+    InvalidConfig(String),
 }

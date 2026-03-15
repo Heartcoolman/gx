@@ -10,9 +10,19 @@ import type { WorkerCommand, WorkerEvent } from './workerProtocol';
 import type { DayKind } from '../types/time';
 import type { SimEnvConfig } from '../store/simEnvStore';
 
+/** Snapshot of configuration state so we can replay after worker crash. */
+interface BridgeState {
+  scenarioId?: string;
+  speed?: number;
+  dispatchEnabled?: boolean;
+  dayKind?: DayKind;
+  simEnv?: SimEnvConfig;
+}
+
 export class SimulationBridge {
   private worker: Worker;
   private warmupResolve: (() => void) | null = null;
+  private savedState: BridgeState = {};
 
   constructor() {
     this.worker = new Worker(
@@ -58,24 +68,29 @@ export class SimulationBridge {
   }
 
   setSpeed(speed: number): void {
+    this.savedState.speed = speed;
     this.send({ type: 'setSpeed', speed });
   }
 
   setDispatchEnabled(enabled: boolean): void {
+    this.savedState.dispatchEnabled = enabled;
     this.send({ type: 'setDispatchEnabled', enabled });
   }
 
   setDayKind(dayKind: DayKind): void {
+    this.savedState.dayKind = dayKind;
     this.send({ type: 'setDayKind', dayKind });
   }
 
   setScenario(scenarioId: string): void {
+    this.savedState.scenarioId = scenarioId;
     this.send({ type: 'setScenario', scenarioId });
     useSimulationStore.getState().resetSnapshots();
     useSimulationStore.getState().setBackendResults([], null, []);
   }
 
   setSimEnv(config: SimEnvConfig): void {
+    this.savedState.simEnv = config;
     this.send({ type: 'setSimEnv', config });
   }
 
@@ -96,22 +111,18 @@ export class SimulationBridge {
     switch (event.type) {
       case 'stateSnapshot': {
         const snap = event.snapshot;
-        store.setSlotIndex(snap.slotIndex);
-        store.setDayKind(snap.dayKind);
-        store.setScenarioMeta({
+        useSimulationStore.setState({
+          slotIndex: snap.slotIndex,
+          dayKind: snap.dayKind,
           scenarioId: snap.scenarioId,
           scenarioLabel: snap.scenarioLabel,
           scenarioDescription: snap.scenarioDescription,
           syntheticPreview: snap.syntheticPreview,
-        });
-        store.setSimulationFrame({
           bikes: snap.bikes,
           brokenBikes: snap.brokenBikes,
           maintenanceBikes: snap.maintenanceBikes,
           stationPressure: snap.stationPressure,
           activeRides: snap.activeRides,
-        });
-        store.setMetrics({
           totalRides: snap.totalRides,
           blockedCount: snap.blockedCount,
           dispatchCount: snap.dispatchCount,
@@ -125,22 +136,17 @@ export class SimulationBridge {
           activeWeatherLabel: snap.activeWeatherLabel,
           activeEvents: snap.activeEvents,
           odMatrix: snap.odMatrix,
+          vehicleAnimations: snap.vehicleAnimations,
         });
-        store.setVehicleAnimations(snap.vehicleAnimations);
         break;
       }
 
       case 'animationFrame': {
         const frame = event.frame;
-        store.setSlotIndex(frame.slotIndex);
-        store.setVehicleAnimations(frame.vehicleAnimations);
-        store.setSimulationFrame({
-          ...store,
+        useSimulationStore.setState({
+          slotIndex: frame.slotIndex,
+          vehicleAnimations: frame.vehicleAnimations,
           activeRides: frame.activeRides,
-          bikes: store.bikes,
-          brokenBikes: store.brokenBikes,
-          maintenanceBikes: store.maintenanceBikes,
-          stationPressure: store.stationPressure,
         });
         break;
       }
@@ -177,7 +183,11 @@ export class SimulationBridge {
 
   private handleError = (e: ErrorEvent): void => {
     console.error('[SimulationBridge] Worker crashed:', e.message);
-    // Attempt recovery: create a new worker
+
+    // Notify UI that the engine has reset to idle due to crash
+    useSimulationStore.getState().setEngineState('idle');
+
+    // Recreate worker
     this.worker.terminate();
     this.worker = new Worker(
       new URL('./simulationWorker.ts', import.meta.url),
@@ -186,5 +196,13 @@ export class SimulationBridge {
     this.worker.onmessage = this.handleMessage;
     this.worker.onerror = this.handleError;
     this.send({ type: 'init' });
+
+    // Replay saved configuration state so the new worker matches UI
+    const s = this.savedState;
+    if (s.scenarioId) this.send({ type: 'setScenario', scenarioId: s.scenarioId });
+    if (s.speed !== undefined) this.send({ type: 'setSpeed', speed: s.speed });
+    if (s.dispatchEnabled !== undefined) this.send({ type: 'setDispatchEnabled', enabled: s.dispatchEnabled });
+    if (s.dayKind) this.send({ type: 'setDayKind', dayKind: s.dayKind });
+    if (s.simEnv) this.send({ type: 'setSimEnv', config: s.simEnv });
   };
 }

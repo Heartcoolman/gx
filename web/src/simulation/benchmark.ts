@@ -5,20 +5,14 @@
  * v2: Auto-tune uses a Worker pool for parallel candidate evaluation.
  */
 import type { DayKind } from '../types/time';
-import type { Snapshot } from './stateManager';
+import type { BenchmarkResult as BaseBenchmarkResult, TuningParams, Snapshot } from '../types/benchmark';
 import { useSimEnvStore } from '../store/simEnvStore';
 import type { WorkerRequest, WorkerResponse } from './benchmarkWorker';
 
-export interface BenchmarkResult {
-  totalRides: number;
-  blockedCount: number;
-  blockRate: number;
-  dispatchCount: number;
-  totalBikesMoved: number;
-  bikeStdDev: number;
-  satisfactionRate: number;
+export type { TuningParams } from '../types/benchmark';
+
+export interface BenchmarkResult extends BaseBenchmarkResult {
   snapshots: Snapshot[];
-  finalBikes: number[];
 }
 
 export type BenchmarkPhase = 'idle' | 'warmup' | 'no-dispatch' | 'with-dispatch' | 'done';
@@ -27,17 +21,6 @@ export interface BenchmarkProgress {
   phase: BenchmarkPhase;
   currentSlot: number;
   totalSlots: number;
-}
-
-/** Tunable dispatch parameters */
-export interface TuningParams {
-  vehicleCount: number;
-  vehicleCapacity: number;
-  rebalanceIntervalMinutes: number;
-  safetyBufferRatio: number;
-  peakMultiplier: number;
-  predictionHorizonSlots: number;
-  peakPercentile: number;
 }
 
 export const DEFAULT_PARAMS: TuningParams = {

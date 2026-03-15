@@ -6,6 +6,7 @@ import { CATEGORY_ORDER } from '../types/station';
 import type {
   ActiveRideV2,
   EnvironmentEvent,
+  RidePurpose,
   RiderActivityWindow,
   RiderAgentProfile,
   ScenarioPackage,
@@ -17,10 +18,7 @@ import { useSimEnvStore } from '../store/simEnvStore';
 import { STATIONS } from '../data/stations';
 import { StationStateManagerV2 } from './stateManagerV2';
 import { SLOT_DURATION_MS } from '../data/constants';
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
+import { clamp } from '../utils/math';
 
 /**
  * Poisson random variate.
@@ -77,6 +75,33 @@ function categoryBoost(
 ): number {
   const boost = event.destinationBoost?.[category] ?? 1;
   return boost;
+}
+
+/**
+ * Compute urgency-based scaling factors for retry and wait behavior.
+ * Returns retryScale (>1 = more likely to retry) and waitScale (<1 = less patient).
+ */
+function purposeUrgency(
+  purpose: RidePurpose,
+  windowProgress: number,
+): { retryScale: number; waitScale: number } {
+  switch (purpose) {
+    case 'class': {
+      // Late in window → very urgent: retry +30%, wait tolerance -40%
+      const lateRamp = Math.max(0, (windowProgress - 0.4) / 0.6);
+      return { retryScale: 1.0 + 0.30 * lateRamp, waitScale: 1.0 - 0.40 * lateRamp };
+    }
+    case 'commute': {
+      const lateRamp = Math.max(0, (windowProgress - 0.4) / 0.6);
+      return { retryScale: 1.0 + 0.20 * lateRamp, waitScale: 1.0 - 0.25 * lateRamp };
+    }
+    case 'exercise':
+      return { retryScale: 0.80, waitScale: 1.50 };
+    case 'social':
+      return { retryScale: 0.70, waitScale: 1.60 };
+    default:
+      return { retryScale: 1.0, waitScale: 1.0 };
+  }
 }
 
 export class AgentSimulator {
@@ -157,6 +182,11 @@ export class AgentSimulator {
       for (const window of profile.activityWindows) {
         if (!isSlotInWindow(slotIndex, window.startSlot, window.endSlot)) continue;
 
+        // ── Urgency: how far through the activity window are we? ──
+        const windowSpan = Math.max(1, window.endSlot - window.startSlot);
+        const windowProgress = (slotIndex - window.startSlot) / windowSpan;
+        const urgencyFactor = purposeUrgency(window.purpose, windowProgress);
+
         const peakScale = window.baseIntensity >= 0.8 ? simEnv.peakIntensity : 1;
         const baseline = (
           profile.baseDailyTrips
@@ -188,6 +218,7 @@ export class AgentSimulator {
             purpose: window.purpose,
             slotIndex,
             travelTimeMultiplier: context.travelTimeMultiplier,
+            windowProgress,
           });
           const offsetMs = Math.floor(random() * SLOT_DURATION_MS);
           const departureTimeMs = slotStartMs + offsetMs;
@@ -199,12 +230,13 @@ export class AgentSimulator {
             arrival_time: new Date(arrivalTimeMs).toISOString(),
           });
 
-          const pickup = this.tryResolvePickup(origin, window, slotIndex, stateManager);
+          const pickup = this.tryResolvePickup(origin, window, slotIndex, stateManager, urgencyFactor);
           if (!pickup.ok) {
             // Queue waiting: rider may decide to wait if no bike is available
-            const waitProb = window.waitProbability ?? 0.3;
+            // Urgency scales wait tolerance: urgent riders wait less, relaxed riders wait more
+            const waitProb = (window.waitProbability ?? 0.3) * urgencyFactor.waitScale;
             if (random() < waitProb) {
-              const maxWait = window.maxWaitSlots ?? 5;
+              const maxWait = Math.max(1, Math.round((window.maxWaitSlots ?? 5) * urgencyFactor.waitScale));
               stateManager.enqueueWaiter(origin, maxWait, slotIndex);
             }
             continue;
@@ -313,13 +345,14 @@ export class AgentSimulator {
     window: RiderActivityWindow,
     slotIndex: number,
     stateManager: StationStateManagerV2,
+    urgency: { retryScale: number; waitScale: number },
   ): { ok: true; bikeId: string } | { ok: false } {
     const firstTry = stateManager.tryCheckoutBike(initialStationId, slotIndex);
     if (firstTry.ok) {
       return { ok: true, bikeId: firstTry.bike.id };
     }
 
-    if (random() >= window.retryProbability) {
+    if (random() >= window.retryProbability * urgency.retryScale) {
       stateManager.recordFailure(initialStationId, firstTry.reason);
       return { ok: false };
     }

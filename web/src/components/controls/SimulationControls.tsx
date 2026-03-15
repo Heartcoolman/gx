@@ -1,10 +1,15 @@
 import { useSimulationStore } from '../../store/simulationStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useUIStore } from '../../store/uiStore';
 import { SPEED_OPTIONS } from '../../data/constants';
 import { useEngineControls } from '../../App';
 
 export default function SimulationControls() {
-  const { engineState, speed, dispatchEnabled } = useSimulationStore();
+  const { engineState, speed, dispatchEnabled } = useSimulationStore(useShallow(s => ({
+    engineState: s.engineState,
+    speed: s.speed,
+    dispatchEnabled: s.dispatchEnabled,
+  })));
   const { isWarming } = useUIStore();
   const { play, pause, step, reset, changeSpeed, toggleDispatch } = useEngineControls();
 

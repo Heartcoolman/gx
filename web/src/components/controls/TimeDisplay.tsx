@@ -1,8 +1,12 @@
 import { useSimulationStore } from '../../store/simulationStore';
+import { useShallow } from 'zustand/react/shallow';
 import { slotToTime, DAY_KIND_LABELS } from '../../types/time';
 
 export default function TimeDisplay() {
-  const { slotIndex, dayKind } = useSimulationStore();
+  const { slotIndex, dayKind } = useSimulationStore(useShallow(s => ({
+    slotIndex: s.slotIndex,
+    dayKind: s.dayKind,
+  })));
 
   return (
     <div style={{ textAlign: 'center', padding: '8px 0' }}>

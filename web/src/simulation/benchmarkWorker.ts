@@ -24,30 +24,8 @@ import type { DispatchPlan, DispatchVehicle } from '../types/dispatch';
 import type { DayKind } from '../types/time';
 import type { SimEnvConfig } from '../store/simEnvStore';
 import type { PriceIncentive } from '../types/incentive';
+import type { BenchmarkResult, TuningParams } from '../types/benchmark';
 import { planVehicleExecution, type VehicleDispatchExecution } from './dispatchExecution';
-
-// ── Types matching benchmark.ts ──
-
-export interface BenchmarkResult {
-  totalRides: number;
-  blockedCount: number;
-  blockRate: number;
-  dispatchCount: number;
-  totalBikesMoved: number;
-  bikeStdDev: number;
-  satisfactionRate: number;
-  finalBikes: number[];
-}
-
-export interface TuningParams {
-  vehicleCount: number;
-  vehicleCapacity: number;
-  rebalanceIntervalMinutes: number;
-  safetyBufferRatio: number;
-  peakMultiplier: number;
-  predictionHorizonSlots: number;
-  peakPercentile: number;
-}
 
 // ── Messages ──
 

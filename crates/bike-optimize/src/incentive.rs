@@ -36,6 +36,12 @@ pub(crate) fn compute_incentives(
     // Shorter window → incentives stay current and don't confuse riders after conditions change.
     let valid_until = now + Duration::minutes(30);
 
+    let station_by_id: std::collections::HashMap<StationId, &bike_core::Station> = input
+        .stations
+        .iter()
+        .map(|s| (s.id, s))
+        .collect();
+
     // ── System pressure ──
     // fill_ratio: how full is the overall fleet?  Low fill ⟹ high pressure.
     let total_bikes: u32 = input.current_status.iter().map(|s| s.available_bikes).sum();
@@ -57,7 +63,7 @@ pub(crate) fn compute_incentives(
 
     let mut empty_deficits: Vec<&StationGap> =
         deficits.iter().filter(|d| d.current_bikes == 0).collect();
-    empty_deficits.sort_by(|a, b| b.urgency.partial_cmp(&a.urgency).unwrap());
+    empty_deficits.sort_by(|a, b| b.urgency.partial_cmp(&a.urgency).unwrap_or(std::cmp::Ordering::Equal));
 
     for deficit in &empty_deficits {
         let incoming = vehicle_inflow.get(&deficit.station_id).copied().unwrap_or(0);
@@ -102,7 +108,7 @@ pub(crate) fn compute_incentives(
         .iter()
         .filter(|d| d.current_bikes > 0)
         .collect();
-    moderate_deficits.sort_by(|a, b| b.urgency.partial_cmp(&a.urgency).unwrap());
+    moderate_deficits.sort_by(|a, b| b.urgency.partial_cmp(&a.urgency).unwrap_or(std::cmp::Ordering::Equal));
 
     for deficit in moderate_deficits {
         if running_cost >= budget {
@@ -117,7 +123,7 @@ pub(crate) fn compute_incentives(
             continue;
         }
 
-        let station   = input.stations.iter().find(|s| s.id == deficit.station_id);
+        let station   = station_by_id.get(&deficit.station_id).copied();
         let capacity  = station.map(|s| s.capacity).unwrap_or(20) as f64;
         // Residual shortage after vehicle delivery.
         let residual  = (needed - incoming) as f64;
@@ -165,7 +171,7 @@ pub(crate) fn compute_incentives(
             break;
         }
 
-        let station = input.stations.iter().find(|s| s.id == surplus.station_id);
+        let station = station_by_id.get(&surplus.station_id).copied();
         let capacity = station.map(|s| s.capacity).unwrap_or(20) as f64;
         let excess_ratio = surplus.gap as f64 / capacity;
 

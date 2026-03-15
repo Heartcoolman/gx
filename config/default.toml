@@ -1,20 +1,20 @@
 [general]
 station_count = 15
-total_bikes = 200
-time_slot_minutes = 15
+total_bikes = 1000
+time_slot_minutes = 1
 
 [prediction]
-horizon_slots = 4          # 4 slots = 1 hour lookahead
-ewma_alpha = 0.3
-safety_buffer_ratio = 0.20
-peak_multiplier = 1.5
+horizon_slots = 10
+ewma_alpha = 0.35
+safety_buffer_ratio = 0.55
+peak_multiplier = 2.5
 peak_percentile = 0.80
 
 [dispatch]
-vehicle_count = 3
-vehicle_capacity = 15
-rebalance_interval_minutes = 30
+vehicle_count = 5
+vehicle_capacity = 20
+rebalance_interval_minutes = 15
 
 [incentive]
-max_discount_percent = 50.0
-budget_per_hour = 500.0
+max_discount_percent = 60.0
+budget_per_hour = 800.0

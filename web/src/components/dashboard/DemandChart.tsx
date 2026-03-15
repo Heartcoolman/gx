@@ -1,11 +1,14 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useSimulationStore } from '../../store/simulationStore';
+import { useShallow } from 'zustand/react/shallow';
 import { STATIONS } from '../../data/stations';
 import { slotToTime } from '../../types/time';
 import { useUIStore } from '../../store/uiStore';
 
 export default function DemandChart() {
-  const { snapshots } = useSimulationStore();
+  const { snapshots } = useSimulationStore(useShallow(s => ({
+    snapshots: s.snapshots,
+  })));
   const { selectedStationId } = useUIStore();
 
   const data = snapshots.map((snap) => {

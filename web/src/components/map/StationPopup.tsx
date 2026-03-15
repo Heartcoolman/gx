@@ -4,6 +4,7 @@ import { CATEGORY_LABELS } from '../../types/station';
 import { bikeRatioColor, bikeRatioLabel } from '../../utils/colors';
 import { formatPercent } from '../../utils/formatting';
 import { useSimulationStore } from '../../store/simulationStore';
+import { useShallow } from 'zustand/react/shallow';
 
 interface Props {
   station: Station;
@@ -13,7 +14,10 @@ interface Props {
 }
 
 export default function StationPopup({ station, bikes, brokenBikes, pressure }: Props) {
-  const { maintenanceBikes, snapshots } = useSimulationStore();
+  const { maintenanceBikes, snapshots } = useSimulationStore(useShallow(s => ({
+    maintenanceBikes: s.maintenanceBikes,
+    snapshots: s.snapshots,
+  })));
   const ratio = station.capacity > 0 ? bikes / station.capacity : 0;
   const color = bikeRatioColor(ratio);
   const latestSnapshot = snapshots[snapshots.length - 1];

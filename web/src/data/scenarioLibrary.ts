@@ -297,7 +297,7 @@ export const SCENARIO_LIBRARY: ScenarioPackage[] = [
     '常规教学周的晴朗工作日，换课潮、午餐峰和闭馆回流明显。',
     'weekday',
     'clear',
-    210,
+    1200,
     1.0,
     { 4: 1.18, 5: 1.22, 8: 1.14, 10: 1.25 },
     {
@@ -315,7 +315,7 @@ export const SCENARIO_LIBRARY: ScenarioPackage[] = [
     '全天降雨叠加寒潮，短途保留，长距离和运动需求下降，坏车率更高。',
     'weekday',
     'rainy',
-    205,
+    1100,
     0.9,
     { 0: 1.1, 1: 1.08, 8: 1.18, 13: 1.14 },
     {
@@ -333,7 +333,7 @@ export const SCENARIO_LIBRARY: ScenarioPackage[] = [
     '图书馆和教学区压力明显上升，晚间回宿舍延后，需求更集中。',
     'exam_period',
     'exam_rain',
-    215,
+    1250,
     0.98,
     { 6: 1.1, 7: 1.14, 10: 1.36, 14: 1.08 },
     {
@@ -351,7 +351,7 @@ export const SCENARIO_LIBRARY: ScenarioPackage[] = [
     '傍晚大型活动让运动场和校门成为热点，晚高峰和短时溢出都更明显。',
     'holiday',
     'festival',
-    225,
+    1350,
     1.16,
     { 9: 1.12, 11: 1.28, 12: 1.32, 13: 1.22, 14: 1.22 },
     {
@@ -369,7 +369,7 @@ export const SCENARIO_LIBRARY: ScenarioPackage[] = [
     '学习通勤减弱，运动、社交和短途餐饮出行更分散。',
     'saturday',
     'weekend',
-    198,
+    1000,
     0.84,
     { 2: 1.08, 8: 1.1, 11: 1.22, 12: 1.2 },
     {

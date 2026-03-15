@@ -1,8 +1,11 @@
 import { useSimulationStore } from '../../store/simulationStore';
+import { useShallow } from 'zustand/react/shallow';
 import { CATEGORY_LABELS, CATEGORY_ORDER } from '../../types/station';
 
 export default function FlowMatrix() {
-  const { odMatrix } = useSimulationStore();
+  const { odMatrix } = useSimulationStore(useShallow(s => ({
+    odMatrix: s.odMatrix,
+  })));
   const matrix = odMatrix;
 
   const maxVal = Math.max(1, ...matrix.flat());

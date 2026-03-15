@@ -1,4 +1,5 @@
 #!/usr/bin/env npx tsx
+/// <reference types="node" />
 /**
  * CLI Benchmark — uses the EXACT same modules as the browser.
  *
@@ -109,32 +110,36 @@ async function main() {
   console.log(`\n${'='.repeat(60)}`);
   console.log(`  📈 逐时段阻塞率变化 (第1天)`);
   console.log(`${'='.repeat(60)}`);
-  console.log(`  ${'时段'.padEnd(12)}  ${'无调度'.padStart(10)}  ${'有调度'.padStart(10)}`);
-  console.log('  ' + '-'.repeat(36));
-  for (let hour = 0; hour < 24; hour++) {
-    const slotStart = hour * 60;
-    const slotEnd = slotStart + 60;
-    let bBlocked = 0, oBlocked = 0, bRides = 0, oRides = 0;
-    for (let si = slotStart; si < Math.min(slotEnd, baseline.snapshots.length); si++) {
-      const snapB = baseline.snapshots[si];
-      const snapO = optimized.snapshots[si];
-      if (si === 0) {
-        bBlocked += snapB.blockedCount; oBlocked += snapO.blockedCount;
-        bRides += snapB.totalRides; oRides += snapO.totalRides;
-      } else {
-        const prevB = baseline.snapshots[si - 1];
-        const prevO = optimized.snapshots[si - 1];
-        bBlocked += snapB.blockedCount - prevB.blockedCount;
-        oBlocked += snapO.blockedCount - prevO.blockedCount;
-        bRides += snapB.totalRides - prevB.totalRides;
-        oRides += snapO.totalRides - prevO.totalRides;
+  if (baseline.snapshots.length === 0 || optimized.snapshots.length === 0) {
+    console.log(`  ⚠️  逐时段统计不可用 (Worker 模式下未收集 snapshots)`);
+  } else {
+    console.log(`  ${'时段'.padEnd(12)}  ${'无调度'.padStart(10)}  ${'有调度'.padStart(10)}`);
+    console.log('  ' + '-'.repeat(36));
+    for (let hour = 0; hour < 24; hour++) {
+      const slotStart = hour * 60;
+      const slotEnd = slotStart + 60;
+      let bBlocked = 0, oBlocked = 0, bRides = 0, oRides = 0;
+      for (let si = slotStart; si < Math.min(slotEnd, baseline.snapshots.length); si++) {
+        const snapB = baseline.snapshots[si];
+        const snapO = optimized.snapshots[si];
+        if (si === 0) {
+          bBlocked += snapB.blockedCount; oBlocked += snapO.blockedCount;
+          bRides += snapB.totalRides; oRides += snapO.totalRides;
+        } else {
+          const prevB = baseline.snapshots[si - 1];
+          const prevO = optimized.snapshots[si - 1];
+          bBlocked += snapB.blockedCount - prevB.blockedCount;
+          oBlocked += snapO.blockedCount - prevO.blockedCount;
+          bRides += snapB.totalRides - prevB.totalRides;
+          oRides += snapO.totalRides - prevO.totalRides;
+        }
       }
+      const bTotal = bRides + bBlocked;
+      const oTotal = oRides + oBlocked;
+      const bRate = bTotal > 0 ? `${(bBlocked / bTotal * 100).toFixed(1)}%` : '0.0%';
+      const oRate = oTotal > 0 ? `${(oBlocked / oTotal * 100).toFixed(1)}%` : '0.0%';
+      console.log(`  ${`${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59`.padEnd(12)}  ${bRate.padStart(10)}  ${oRate.padStart(10)}`);
     }
-    const bTotal = bRides + bBlocked;
-    const oTotal = oRides + oBlocked;
-    const bRate = bTotal > 0 ? `${(bBlocked / bTotal * 100).toFixed(1)}%` : '0.0%';
-    const oRate = oTotal > 0 ? `${(oBlocked / oTotal * 100).toFixed(1)}%` : '0.0%';
-    console.log(`  ${`${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59`.padEnd(12)}  ${bRate.padStart(10)}  ${oRate.padStart(10)}`);
   }
 
   // ── Conclusion ──

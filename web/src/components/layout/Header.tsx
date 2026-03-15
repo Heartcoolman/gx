@@ -1,4 +1,5 @@
 import { useSimulationStore } from '../../store/simulationStore';
+import { useShallow } from 'zustand/react/shallow';
 import { slotToTime, DAY_KIND_LABELS, SLOTS_PER_DAY } from '../../types/time';
 
 export default function Header() {
@@ -9,7 +10,14 @@ export default function Header() {
     scenarioLabel,
     activeWeatherLabel,
     activeEvents,
-  } = useSimulationStore();
+  } = useSimulationStore(useShallow(s => ({
+    slotIndex: s.slotIndex,
+    dayKind: s.dayKind,
+    engineState: s.engineState,
+    scenarioLabel: s.scenarioLabel,
+    activeWeatherLabel: s.activeWeatherLabel,
+    activeEvents: s.activeEvents,
+  })));
   const time = slotToTime(slotIndex);
 
   return (

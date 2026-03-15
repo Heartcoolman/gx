@@ -41,15 +41,25 @@ pub(crate) fn compute_gaps(input: &RebalanceInput) -> (Vec<StationGap>, Vec<Stat
         .map(|s| (s.station_id, s.available_bikes))
         .collect();
 
-    for (i, (station_id, target)) in input.targets.iter().enumerate() {
+    // Map station_id -> index in the stations (and distance_matrix) array.
+    // This decouples gap computation from targets ordering.
+    let station_index_map: std::collections::HashMap<StationId, usize> = input
+        .stations
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.id, i))
+        .collect();
+
+    for (station_id, target) in input.targets.iter() {
         let current = status_map.get(station_id).copied().unwrap_or(0);
+        let Some(station_idx) = station_index_map.get(station_id).copied() else { continue; };
 
         let gap = current as i32 - *target as i32;
 
         if gap > 0 {
             surpluses.push(StationGap {
                 station_id: *station_id,
-                index: i,
+                index: station_idx,
                 current_bikes: current,
                 gap,
                 urgency: 0.0,
@@ -65,7 +75,7 @@ pub(crate) fn compute_gaps(input: &RebalanceInput) -> (Vec<StationGap>, Vec<Stat
             };
             deficits.push(StationGap {
                 station_id: *station_id,
-                index: i,
+                index: station_idx,
                 current_bikes: current,
                 gap,
                 urgency,
@@ -74,7 +84,7 @@ pub(crate) fn compute_gaps(input: &RebalanceInput) -> (Vec<StationGap>, Vec<Stat
     }
 
     // Sort deficits by urgency descending (most critical first).
-    deficits.sort_by(|a, b| b.urgency.partial_cmp(&a.urgency).unwrap());
+    deficits.sort_by(|a, b| b.urgency.partial_cmp(&a.urgency).unwrap_or(std::cmp::Ordering::Equal));
     // Sort surpluses by gap descending (largest surplus first).
     surpluses.sort_by(|a, b| b.gap.cmp(&a.gap));
 
@@ -181,7 +191,7 @@ pub(crate) fn greedy_assign(
                 .min_by(|(_, a), (_, b)| {
                     let da = station_distance(distance_matrix, a.index, deficit.index);
                     let db = station_distance(distance_matrix, b.index, deficit.index);
-                    da.partial_cmp(&db).unwrap()
+                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
                 });
             if let Some((si, _)) = nearest {
                 let take = coverage_cap.min(surpluses[si].gap as u32);
@@ -265,68 +275,50 @@ pub(crate) fn greedy_assign(
     }
 
     // Round 1: proportional — each deficit takes at most 50% of any single surplus.
-    for (di, deficit) in deficits.iter().enumerate() {
-        if deficit_remaining[di] == 0 || remaining_capacity == 0 {
-            continue;
-        }
-
-        let mut candidates: Vec<(usize, f64, f64)> = surpluses
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.gap > 0)
-            .map(|(i, s)| {
-                let dist = station_distance(distance_matrix, s.index, deficit.index);
-                let max_from_this = ((s.gap as f64) * 0.5).ceil() as u32;
-                let take = deficit_remaining[di]
-                    .min(max_from_this)
-                    .min(s.gap as u32)
-                    .min(remaining_capacity)
-                    .min(max_order_size);
-                let score = transfer_score(s, deficit, take, dist, false, deficit_allocated[di]);
-                (i, score, dist)
-            })
-            .collect();
-        candidates.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap()
-                .then_with(|| a.2.partial_cmp(&b.2).unwrap())
-        });
-
-        for (surplus_idx, _, _) in &candidates {
-            if deficit_remaining[di] == 0 || remaining_capacity == 0 {
-                break;
-            }
-            let surplus = &mut surpluses[*surplus_idx];
-            if surplus.gap <= 0 {
-                continue;
-            }
-            // Cap: take at most 50% of this surplus's current gap.
-            let max_from_this = ((surplus.gap as f64) * 0.5).ceil() as u32;
-            let take = deficit_remaining[di]
-                .min(max_from_this)
-                .min(surplus.gap as u32)
-                .min(remaining_capacity);
-            if take == 0 {
-                continue;
-            }
-
-            let before = deficit_remaining[di];
-            allocate_chunked_order(
-                &mut orders,
-                surplus,
-                deficit,
-                take,
-                max_order_size,
-                &mut deficit_remaining[di],
-                &mut remaining_capacity,
-            );
-            deficit_allocated[di] += before - deficit_remaining[di];
-        }
-    }
+    assign_round(
+        &mut orders,
+        surpluses,
+        deficits,
+        &mut deficit_remaining,
+        &mut deficit_allocated,
+        &mut remaining_capacity,
+        distance_matrix,
+        max_order_size,
+        Some(0.5),
+    );
 
     // Round 2: uncapped — distribute remaining surplus greedily.
+    assign_round(
+        &mut orders,
+        surpluses,
+        deficits,
+        &mut deficit_remaining,
+        &mut deficit_allocated,
+        &mut remaining_capacity,
+        distance_matrix,
+        max_order_size,
+        None,
+    );
+
+    orders
+}
+
+/// Common assignment round used by the non-peak greedy path.
+/// When `cap_ratio` is `Some(0.5)`, each deficit takes at most 50% of any single surplus (Round 1).
+/// When `cap_ratio` is `None`, no cap is applied (Round 2).
+fn assign_round(
+    orders: &mut Vec<MoveOrder>,
+    surpluses: &mut [StationGap],
+    deficits: &[StationGap],
+    deficit_remaining: &mut [u32],
+    deficit_allocated: &mut [u32],
+    remaining_capacity: &mut u32,
+    distance_matrix: &[Vec<f64>],
+    max_order_size: u32,
+    cap_ratio: Option<f64>,
+) {
     for (di, deficit) in deficits.iter().enumerate() {
-        if deficit_remaining[di] == 0 || remaining_capacity == 0 {
+        if deficit_remaining[di] == 0 || *remaining_capacity == 0 {
             continue;
         }
 
@@ -336,50 +328,65 @@ pub(crate) fn greedy_assign(
             .filter(|(_, s)| s.gap > 0)
             .map(|(i, s)| {
                 let dist = station_distance(distance_matrix, s.index, deficit.index);
-                let take = deficit_remaining[di]
-                    .min(s.gap as u32)
-                    .min(remaining_capacity)
-                    .min(max_order_size);
+                let take = if let Some(ratio) = cap_ratio {
+                    let max_from_this = ((s.gap as f64) * ratio).ceil() as u32;
+                    deficit_remaining[di]
+                        .min(max_from_this)
+                        .min(s.gap as u32)
+                        .min(*remaining_capacity)
+                        .min(max_order_size)
+                } else {
+                    deficit_remaining[di]
+                        .min(s.gap as u32)
+                        .min(*remaining_capacity)
+                        .min(max_order_size)
+                };
                 let score = transfer_score(s, deficit, take, dist, false, deficit_allocated[di]);
                 (i, score, dist)
             })
             .collect();
         candidates.sort_by(|a, b| {
             b.1.partial_cmp(&a.1)
-                .unwrap()
-                .then_with(|| a.2.partial_cmp(&b.2).unwrap())
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
         });
 
         for (surplus_idx, _, _) in &candidates {
-            if deficit_remaining[di] == 0 || remaining_capacity == 0 {
+            if deficit_remaining[di] == 0 || *remaining_capacity == 0 {
                 break;
             }
             let surplus = &mut surpluses[*surplus_idx];
             if surplus.gap <= 0 {
                 continue;
             }
-            let take = deficit_remaining[di]
-                .min(surplus.gap as u32)
-                .min(remaining_capacity);
+            let take = if let Some(ratio) = cap_ratio {
+                let max_from_this = ((surplus.gap as f64) * ratio).ceil() as u32;
+                deficit_remaining[di]
+                    .min(max_from_this)
+                    .min(surplus.gap as u32)
+                    .min(*remaining_capacity)
+            } else {
+                deficit_remaining[di]
+                    .min(surplus.gap as u32)
+                    .min(*remaining_capacity)
+            };
             if take == 0 {
                 continue;
             }
 
             let before = deficit_remaining[di];
             allocate_chunked_order(
-                &mut orders,
+                orders,
                 surplus,
                 deficit,
                 take,
                 max_order_size,
                 &mut deficit_remaining[di],
-                &mut remaining_capacity,
+                remaining_capacity,
             );
             deficit_allocated[di] += before - deficit_remaining[di];
         }
     }
-
-    orders
 }
 
 fn allocate_chunked_order(
@@ -441,9 +448,21 @@ fn build_hotspot_candidates(
         .map(|s| (s.station_id, s.available_bikes))
         .collect();
 
+    // Map station_id -> index in the stations (and distance_matrix) array.
+    let station_index_map: std::collections::HashMap<StationId, usize> = input
+        .stations
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.id, i))
+        .collect();
+
     let mut hotspots = Vec::new();
-    for (index, (station_id, target)) in input.targets.iter().enumerate() {
-        let station = match input.stations.get(index) {
+    for (station_id, target) in input.targets.iter() {
+        let station_idx = match station_index_map.get(station_id).copied() {
+            Some(idx) => idx,
+            None => continue,
+        };
+        let station = match input.stations.get(station_idx) {
             Some(station) => station,
             None => continue,
         };
@@ -465,12 +484,12 @@ fn build_hotspot_candidates(
 
         hotspots.push(HotspotCandidate {
             station_id: *station_id,
-            index,
+            index: station_idx,
             score,
         });
     }
 
-    hotspots.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    hotspots.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     hotspots
 }
 
@@ -512,10 +531,10 @@ fn append_hotspot_staging(
                     .last()
                     .map(|stop| stop.station_id)
                     .unwrap_or(vehicle.current_position);
-                let station_index = station_index_by_id
-                    .get(&station_id)
-                    .copied()
-                    .unwrap_or(vehicle.current_position.0 as usize);
+                let station_index = match station_index_by_id.get(&station_id) {
+                    Some(&idx) => idx,
+                    None => continue,
+                };
                 (station_id, station_index, route.estimated_duration_minutes)
             } else {
                 (
@@ -544,7 +563,7 @@ fn append_hotspot_staging(
                 let score = hotspot.score / spread_penalty / (1.0 + distance / 700.0);
                 Some((hotspot, score, distance, stage_minutes))
             })
-            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let Some((hotspot, score, distance, stage_minutes)) = best_hotspot else {
             continue;

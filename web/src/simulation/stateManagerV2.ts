@@ -15,6 +15,8 @@ import { STATIONS } from '../data/stations';
 import { useSimEnvStore } from '../store/simEnvStore';
 import { random } from './rng';
 import { distanceMatrix } from './distanceMatrix';
+import { computeRealisticTravelDuration } from './ridingModel';
+import { clamp } from '../utils/math';
 
 function createEmptyReasons(): FailureReasonCounts {
   return {
@@ -25,10 +27,6 @@ function createEmptyReasons(): FailureReasonCounts {
     gave_up_after_retry: 0,
     gave_up_after_wait: 0,
   };
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }
 
 // ── Indexed counters per station ──
@@ -140,7 +138,8 @@ export class StationStateManagerV2 {
       c.available--;
       // Remove from available-indices list
       const arr = this.stationAvailableIndices[bike.stationId];
-      const bikeIdx = this.bikes.indexOf(bike);
+      const bikeIdx = this.bikeIdToIndex.get(bike.id);
+      if (bikeIdx === undefined) return;
       const pos = arr.indexOf(bikeIdx);
       if (pos !== -1) {
         // swap-remove for O(1)
@@ -159,7 +158,10 @@ export class StationStateManagerV2 {
     if (!c) return;
     if (isAvailableCondition(bike.condition)) {
       c.available++;
-      this.stationAvailableIndices[bike.stationId].push(this.bikes.indexOf(bike));
+      const bikeIdx = this.bikeIdToIndex.get(bike.id);
+      if (bikeIdx !== undefined) {
+        this.stationAvailableIndices[bike.stationId].push(bikeIdx);
+      }
     }
     if (isBrokenCondition(bike.condition)) c.broken++;
     if (bike.condition === 'maintenance') c.maintenance++;
@@ -329,15 +331,88 @@ export class StationStateManagerV2 {
         continue;
       }
 
-      this.completeRide(
-        ride.bikeId,
-        ride.plannedDestination,
-        ride.fallbackStations,
-        slotIndex,
-        ride.overflowMeters,
-      );
+      // Check if preferred destination has space
+      const preferredOccupied = this.counters[ride.plannedDestination]?.docked ?? 0;
+      const preferredHasSpace = preferredOccupied < STATIONS[ride.plannedDestination].capacity;
+
+      if (preferredHasSpace || ride.isOverflow) {
+        // Normal arrival or second-overflow: force dock (no further overflow rides)
+        this.completeRide(
+          ride.bikeId,
+          ride.plannedDestination,
+          ride.fallbackStations,
+          slotIndex,
+          ride.overflowMeters,
+        );
+      } else {
+        // Destination full — create overflow ride to nearest available station
+        const overflowRide = this.createOverflowRide(ride, nowMs, slotIndex);
+        if (overflowRide) {
+          remaining.push(overflowRide);
+        } else {
+          // No fallback found — force dock at preferred (over-capacity edge case)
+          this.completeRide(
+            ride.bikeId,
+            ride.plannedDestination,
+            ride.fallbackStations,
+            slotIndex,
+            ride.overflowMeters,
+          );
+        }
+      }
     }
     this.activeRides = remaining;
+  }
+
+  /** Create a short overflow ride from the full destination to the nearest available fallback. */
+  private createOverflowRide(
+    originalRide: ActiveRideV2,
+    nowMs: number,
+    slotIndex: number,
+  ): ActiveRideV2 | null {
+    // Find fallback stations that have space, excluding the full destination
+    const candidates = originalRide.fallbackStations.filter((stationId) => {
+      if (stationId === originalRide.plannedDestination) return false;
+      const occupied = this.counters[stationId]?.docked ?? 0;
+      return occupied < STATIONS[stationId].capacity;
+    });
+
+    if (candidates.length === 0) return null;
+
+    const fallbackStationId = candidates[0];
+    const extraDistance = distanceMatrix[originalRide.plannedDestination]?.[fallbackStationId] ?? 200;
+
+    const extraDurationMs = computeRealisticTravelDuration({
+      distanceMeters: extraDistance,
+      weather: originalRide.weather,
+      purpose: originalRide.purpose,
+      slotIndex,
+      travelTimeMultiplier: 1.0,
+    });
+
+    // Record overflow event on the original destination
+    this.totalOverflowEvents++;
+    this.slotOverflowEvents++;
+    this.recentOverflowByStation[originalRide.plannedDestination]++;
+    this.temporaryHeatByStation[originalRide.plannedDestination] += 0.08;
+
+    return {
+      rideId: `${originalRide.rideId}-overflow`,
+      bikeId: originalRide.bikeId,
+      origin: originalRide.plannedDestination,
+      destination: fallbackStationId,
+      plannedDestination: fallbackStationId,
+      fallbackStations: candidates,
+      departureTime: nowMs,
+      arrivalTime: nowMs + extraDurationMs,
+      progress: 0,
+      purpose: originalRide.purpose,
+      riderProfileId: originalRide.riderProfileId,
+      weather: originalRide.weather,
+      distanceMeters: extraDistance,
+      overflowMeters: originalRide.overflowMeters + extraDistance,
+      isOverflow: true,
+    };
   }
 
   completeRide(
@@ -474,6 +549,8 @@ export class StationStateManagerV2 {
         return leftDistance - rightDistance;
       });
 
+    const loadedBikes = this.bikes.filter((bike) => bike.stationId === null && bike.condition === 'unavailable');
+
     for (const candidateId of candidateStations) {
       if (remaining <= 0) {
         break;
@@ -485,13 +562,13 @@ export class StationStateManagerV2 {
         continue;
       }
 
-      const loadedBikes = this.bikes.filter((bike) => bike.stationId === null && bike.condition === 'unavailable');
       const toPlace = Math.min(remaining, space, loadedBikes.length);
       for (let index = 0; index < toPlace; index++) {
         const bike = loadedBikes[index];
         this.transitionBike(bike, candidateId, 'healthy');
         bike.recoveryReadySlot = null;
       }
+      loadedBikes.splice(0, toPlace);
 
       remaining -= toPlace;
       if (toPlace > 0) {

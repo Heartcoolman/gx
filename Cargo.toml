@@ -19,3 +19,8 @@ tracing = "0.1"
 bike-core = { path = "crates/bike-core" }
 bike-predict = { path = "crates/bike-predict" }
 bike-optimize = { path = "crates/bike-optimize" }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

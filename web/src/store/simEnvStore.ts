@@ -12,7 +12,7 @@ export interface SimEnvConfig {
 }
 
 export const DEFAULT_SIM_ENV: SimEnvConfig = {
-  totalBikes: 1000,
+  totalBikes: 0, // 0 = use scenario default
   demandMultiplier: 1.0,
   peakIntensity: 1.0,
   noiseFactor: 0.2,
@@ -35,7 +35,7 @@ export const SIM_ENV_PRESETS = [
     key: 'light',
     label: '😌 低峰',
     description: '课少/周末低需求',
-    config: { totalBikes: 1000, demandMultiplier: 0.6, peakIntensity: 0.7, noiseFactor: 0.1 },
+    config: { totalBikes: 0, demandMultiplier: 0.6, peakIntensity: 0.7, noiseFactor: 0.1 },
     color: '#10b981',
   },
   {
@@ -49,21 +49,21 @@ export const SIM_ENV_PRESETS = [
     key: 'busy',
     label: '🔥 高峰日',
     description: '考试周/活动日',
-    config: { totalBikes: 1000, demandMultiplier: 1.5, peakIntensity: 1.5, noiseFactor: 0.25 },
+    config: { totalBikes: 0, demandMultiplier: 1.5, peakIntensity: 1.5, noiseFactor: 0.25 },
     color: '#f59e0b',
   },
   {
     key: 'extreme',
     label: '💀 极端',
     description: '开学日/大型活动',
-    config: { totalBikes: 1000, demandMultiplier: 2.0, peakIntensity: 2.0, noiseFactor: 0.3 },
+    config: { totalBikes: 0, demandMultiplier: 2.0, peakIntensity: 2.0, noiseFactor: 0.3 },
     color: '#ef4444',
   },
   {
     key: 'shortage',
     label: '🚲 车辆不足',
-    description: '500车应对全校需求',
-    config: { totalBikes: 500, demandMultiplier: 1.0, peakIntensity: 1.0, noiseFactor: 0.2 },
+    description: '600车应对全校需求',
+    config: { totalBikes: 600, demandMultiplier: 1.0, peakIntensity: 1.0, noiseFactor: 0.2 },
     color: '#8b5cf6',
   },
 ];

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use bike_core::{
     DayKind, DemandRecord, PredictedDemand, StationId, SystemConfig, TargetInventory, TimeSlot,
 };
+use chrono::Timelike;
 
 use crate::DemandPredictor;
 
@@ -155,16 +156,11 @@ impl CompositePredictor {
 
     fn predict_raw(&self, station_id: StationId, slot: TimeSlot) -> (f64, f64) {
         let key = (station_id, slot.day_kind, slot.slot_index);
-        let base_p = self
+        let (base_p, base_r) = self
             .baseline
             .get(&key)
-            .map(|b| b.avg_pickups())
-            .unwrap_or(0.0);
-        let base_r = self
-            .baseline
-            .get(&key)
-            .map(|b| b.avg_returns())
-            .unwrap_or(0.0);
+            .map(|b| (b.avg_pickups(), b.avg_returns()))
+            .unwrap_or((0.0, 0.0));
         let (dev_p, dev_r) = self
             .ewma
             .get(&key)
@@ -189,15 +185,11 @@ impl DemandPredictor for CompositePredictor {
     fn observe(&mut self, record: &DemandRecord, day_kind: DayKind) {
         let departure_slot = {
             let dt = record.departure_time;
-            let hour = dt.format("%H").to_string().parse::<u32>().unwrap_or(0);
-            let minute = dt.format("%M").to_string().parse::<u32>().unwrap_or(0);
-            hour * 60 + minute
+            dt.hour() * 60 + dt.minute()
         };
         let arrival_slot = {
             let dt = record.arrival_time;
-            let hour = dt.format("%H").to_string().parse::<u32>().unwrap_or(0);
-            let minute = dt.format("%M").to_string().parse::<u32>().unwrap_or(0);
-            hour * 60 + minute
+            dt.hour() * 60 + dt.minute()
         };
 
         let pickup_key = (record.origin, day_kind, departure_slot);
@@ -309,7 +301,7 @@ mod tests {
             feed_day(&mut pred, &records, DayKind::Weekday);
         }
 
-        let slot = TimeSlot::from_time(DayKind::Weekday, 8, 0);
+        let slot = TimeSlot::from_time(DayKind::Weekday, 8, 0).unwrap();
         let demand = pred.predict(StationId(1), slot);
         assert!(
             demand.pickups > 5.0,
@@ -335,7 +327,7 @@ mod tests {
             feed_day(&mut pred, &records, DayKind::Weekday);
         }
 
-        let slot = TimeSlot::from_time(DayKind::Weekday, 8, 0);
+        let slot = TimeSlot::from_time(DayKind::Weekday, 8, 0).unwrap();
         let demand = pred.predict(StationId(1), slot);
         assert!(
             demand.net_flow < 0.0,
@@ -354,7 +346,7 @@ mod tests {
         }
 
         let config = SystemConfig::default();
-        let slot = TimeSlot::from_time(DayKind::Weekday, 8, 0);
+        let slot = TimeSlot::from_time(DayKind::Weekday, 8, 0).unwrap();
         let target = pred.target_inventory(StationId(1), slot, 30, &config);
         assert!(
             target.target_bikes <= 30,
@@ -367,7 +359,7 @@ mod tests {
     fn test_zero_demand_zero_target() {
         let pred = CompositePredictor::new(0.3);
         let config = SystemConfig::default();
-        let slot = TimeSlot::from_time(DayKind::Weekday, 8, 0);
+        let slot = TimeSlot::from_time(DayKind::Weekday, 8, 0).unwrap();
         let target = pred.target_inventory(StationId(1), slot, 30, &config);
         // With min safety buffer of 2, zero demand still yields target=2.
         assert_eq!(
@@ -384,8 +376,8 @@ mod tests {
             feed_day(&mut pred, &records, DayKind::Weekday);
         }
 
-        let wd = pred.predict(StationId(1), TimeSlot::from_time(DayKind::Weekday, 8, 0));
-        let sun = pred.predict(StationId(1), TimeSlot::from_time(DayKind::Sunday, 8, 0));
+        let wd = pred.predict(StationId(1), TimeSlot::from_time(DayKind::Weekday, 8, 0).unwrap());
+        let sun = pred.predict(StationId(1), TimeSlot::from_time(DayKind::Sunday, 8, 0).unwrap());
 
         assert!(wd.pickups > 0.0);
         assert_eq!(sun.pickups, 0.0, "Sunday should have no data");
@@ -408,13 +400,13 @@ mod tests {
         let config = SystemConfig::default();
         let morning_target = pred.target_inventory(
             StationId(1),
-            TimeSlot::from_time(DayKind::Weekday, 8, 0),
+            TimeSlot::from_time(DayKind::Weekday, 8, 0).unwrap(),
             30,
             &config,
         );
         let afternoon_target = pred.target_inventory(
             StationId(1),
-            TimeSlot::from_time(DayKind::Weekday, 17, 0),
+            TimeSlot::from_time(DayKind::Weekday, 17, 0).unwrap(),
             30,
             &config,
         );

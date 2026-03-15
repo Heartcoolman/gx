@@ -5,7 +5,6 @@
 *.log
 benchmark_results.json
 .DS_Store
-Cargo.lock
 .claude/
 .orchids/
 *.tsbuildinfo

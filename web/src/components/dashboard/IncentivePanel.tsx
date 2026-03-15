@@ -1,4 +1,5 @@
 import { useSimulationStore } from '../../store/simulationStore';
+import { useShallow } from 'zustand/react/shallow';
 import { FAILURE_REASON_LABELS } from '../../types/scenario';
 
 export default function IncentivePanel() {
@@ -8,7 +9,13 @@ export default function IncentivePanel() {
     failureReasonCounts,
     syntheticPreview,
     scenarioLabel,
-  } = useSimulationStore();
+  } = useSimulationStore(useShallow(s => ({
+    activeWeatherLabel: s.activeWeatherLabel,
+    activeEvents: s.activeEvents,
+    failureReasonCounts: s.failureReasonCounts,
+    syntheticPreview: s.syntheticPreview,
+    scenarioLabel: s.scenarioLabel,
+  })));
 
   const sortedReasons = Object.entries(failureReasonCounts)
     .sort((left, right) => right[1] - left[1])

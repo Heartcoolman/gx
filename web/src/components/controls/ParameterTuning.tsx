@@ -2,7 +2,7 @@ import { useSimEnvStore, SIM_ENV_PRESETS, DEFAULT_SIM_ENV } from '../../store/si
 import type { SimEnvConfig } from '../../store/simEnvStore';
 
 interface ParamDef {
-  key: string;
+  key: keyof SimEnvConfig;
   label: string;
   min: number;
   max: number;
@@ -14,7 +14,7 @@ interface ParamDef {
 }
 
 const ENV_PARAMS: ParamDef[] = [
-  { key: 'totalBikes', label: '总车辆数', min: 50, max: 2500, step: 50, unit: '辆', effect: 'down' },
+  { key: 'totalBikes', label: '总车辆数', min: 0, max: 2500, step: 50, unit: '辆', effect: 'down', format: (v: number) => v === 0 ? '场景默认' : `${v}` },
   { key: 'demandMultiplier', label: '需求倍率', min: 0.3, max: 6.0, step: 0.1, unit: 'x', effect: 'up', format: v => v.toFixed(1) },
   { key: 'peakIntensity', label: '高峰强度', min: 0.5, max: 3.0, step: 0.1, unit: 'x', effect: 'up', format: v => v.toFixed(1) },
   { key: 'noiseFactor', label: '随机波动', min: 0, max: 0.6, step: 0.05, unit: '', effect: 'up', format: v => `${(v * 100).toFixed(0)}%` },
@@ -76,8 +76,8 @@ export default function ParameterTuning() {
           <ParamSlider
             key={p.key}
             def={p}
-            value={simEnv[p.key as keyof SimEnvConfig]}
-            onChange={v => simEnv.setParam(p.key as keyof SimEnvConfig, v)}
+            value={simEnv[p.key]}
+            onChange={v => simEnv.setParam(p.key, v)}
           />
         ))}
 
@@ -86,7 +86,7 @@ export default function ParameterTuning() {
           padding: '6px 8px', background: 'rgba(245, 158, 11, 0.06)',
           borderRadius: 'var(--radius-sm)', marginTop: 4,
         }}>
-          💡 需求倍率 / 高峰强度 / 随机波动实时生效；总车辆数需重置仿真后生效
+          💡 需求倍率 / 高峰强度 / 随机波动实时生效；总车辆数需重置仿真后生效（0 = 使用场景默认值）
         </div>
       </div>
 

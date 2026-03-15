@@ -1,4 +1,5 @@
 import { useSimulationStore } from '../../store/simulationStore';
+import { useShallow } from 'zustand/react/shallow';
 import type { DayKind } from '../../types/time';
 import { DAY_KIND_LABELS } from '../../types/time';
 import { useEngineControls } from '../../App';
@@ -6,7 +7,9 @@ import { useEngineControls } from '../../App';
 const DAY_KINDS: DayKind[] = ['weekday', 'saturday', 'sunday', 'holiday', 'exam_period'];
 
 export default function DayKindSelector() {
-  const { dayKind } = useSimulationStore();
+  const { dayKind } = useSimulationStore(useShallow(s => ({
+    dayKind: s.dayKind,
+  })));
   const { changeDayKind } = useEngineControls();
 
   return (

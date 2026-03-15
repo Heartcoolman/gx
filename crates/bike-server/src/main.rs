@@ -36,6 +36,7 @@ async fn main() {
             "/api/v1/config",
             get(handlers::get_config).put(handlers::put_config),
         )
+        // NOTE: permissive CORS for development; restrict origins in production.
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -46,6 +47,6 @@ async fn main() {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!("listening on {}", addr);
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(addr).await.expect("failed to bind TCP listener");
+    axum::serve(listener, app).await.expect("server exited with error");
 }

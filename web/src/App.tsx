@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import AppLayout from './components/layout/AppLayout';
 import { SimulationBridge } from './simulation/simulationBridge';
 import { useSimulationStore } from './store/simulationStore';
+import { useSimEnvStore } from './store/simEnvStore';
 import { useUIStore } from './store/uiStore';
 import type { DayKind } from './types/time';
 import './App.css';
@@ -23,6 +24,23 @@ export default function App() {
       bridgeRef.current = null;
     };
   }, [getBridge]);
+
+  // Sync simEnvStore changes to Worker so totalBikes, demandMultiplier, etc.
+  // are available when the engine resets inside the Worker thread.
+  useEffect(() => {
+    const unsubscribe = useSimEnvStore.subscribe((state) => {
+      const bridge = bridgeRef.current;
+      if (bridge) {
+        bridge.setSimEnv({
+          totalBikes: state.totalBikes,
+          demandMultiplier: state.demandMultiplier,
+          peakIntensity: state.peakIntensity,
+          noiseFactor: state.noiseFactor,
+        });
+      }
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     const globalObject = window as unknown as Record<string, unknown>;

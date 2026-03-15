@@ -106,21 +106,21 @@ pub struct CycleResp {
 pub async fn predict_demand(
     State(state): State<AppState>,
     Json(req): Json<PredictDemandReq>,
-) -> Json<PredictDemandResp> {
+) -> Result<Json<PredictDemandResp>, (StatusCode, String)> {
     let predictor = state.predictor.read().await;
     let demand = predictor.predict(StationId(req.station_id), req.time_slot);
-    Json(PredictDemandResp {
+    Ok(Json(PredictDemandResp {
         station_id: req.station_id,
         pickups: demand.pickups,
         returns: demand.returns,
         net_flow: demand.net_flow,
-    })
+    }))
 }
 
 pub async fn predict_demand_batch(
     State(state): State<AppState>,
     Json(req): Json<BatchPredictReq>,
-) -> Json<BatchPredictResp> {
+) -> Result<Json<BatchPredictResp>, (StatusCode, String)> {
     let predictor = state.predictor.read().await;
     let predictions = req
         .queries
@@ -135,20 +135,20 @@ pub async fn predict_demand_batch(
             }
         })
         .collect();
-    Json(BatchPredictResp { predictions })
+    Ok(Json(BatchPredictResp { predictions }))
 }
 
 pub async fn observe(
     State(state): State<AppState>,
     Json(req): Json<ObserveReq>,
-) -> Json<ObserveResp> {
+) -> Result<Json<ObserveResp>, (StatusCode, String)> {
     let mut predictor = state.predictor.write().await;
     let count = req.records.len();
     for record in &req.records {
         predictor.observe(record, req.day_kind);
     }
     predictor.flush();
-    Json(ObserveResp { accepted: count })
+    Ok(Json(ObserveResp { accepted: count }))
 }
 
 #[derive(Serialize)]
@@ -156,10 +156,10 @@ pub struct ResetResp {
     pub ok: bool,
 }
 
-pub async fn reset_predictor(State(state): State<AppState>) -> Json<ResetResp> {
+pub async fn reset_predictor(State(state): State<AppState>) -> Result<Json<ResetResp>, (StatusCode, String)> {
     let mut predictor = state.predictor.write().await;
     predictor.reset();
-    Json(ResetResp { ok: true })
+    Ok(Json(ResetResp { ok: true }))
 }
 
 pub async fn target_inventory(
@@ -185,7 +185,14 @@ pub async fn target_inventory(
 pub async fn rebalance_solve(
     State(state): State<AppState>,
     Json(req): Json<SolveReq>,
-) -> Json<SolveResp> {
+) -> Result<Json<SolveResp>, (StatusCode, String)> {
+    let n = req.stations.len();
+    if req.distance_matrix.len() != n || req.distance_matrix.iter().any(|row| row.len() != n) {
+        return Err((StatusCode::BAD_REQUEST, format!("distance_matrix must be {n}x{n}")));
+    }
+    if req.vehicles.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "vehicles must not be empty".into()));
+    }
     let config = state.config.read().await;
     let targets: Vec<(StationId, u32)> = req
         .targets
@@ -201,16 +208,16 @@ pub async fn rebalance_solve(
         config: config.clone(),
     };
     let output = state.solver.solve(&input);
-    Json(SolveResp {
+    Ok(Json(SolveResp {
         dispatch_plan: output.dispatch_plan,
         incentives: output.incentives,
-    })
+    }))
 }
 
 pub async fn rebalance_cycle(
     State(state): State<AppState>,
     Json(req): Json<CycleReq>,
-) -> Json<CycleResp> {
+) -> Result<Json<CycleResp>, (StatusCode, String)> {
     let config = state.config.read().await;
     let predictor = state.predictor.read().await;
 
@@ -309,16 +316,17 @@ pub async fn rebalance_cycle(
 
     // ── Target normalization ──
     // When total target exceeds total available bikes the solver is fighting
-    // an impossible battle.  Scale down proportionally, preserving a minimum
-    // floor of 1 per station so every station keeps *some* allocation.
+    // an impossible battle.  Scale down proportionally, preserving a dynamic
+    // floor: 1 per station when affordable, 0 when total_bikes < station_count.
     let total_target: u32 = target_pairs.iter().map(|(_, t)| *t).sum();
     if total_target > total_bikes {
         let station_count = req.stations.len() as u32;
-        let total_min = station_count; // floor: 1 per station
+        let per_station_floor: u32 = if total_bikes >= station_count { 1 } else { 0 };
+        let total_min = per_station_floor * station_count;
         let allocatable = total_bikes.saturating_sub(total_min);
         let surplus_above_min: f64 = target_pairs
             .iter()
-            .map(|(_, t)| t.saturating_sub(1) as f64)
+            .map(|(_, t)| t.saturating_sub(per_station_floor) as f64)
             .sum();
         let scale = if surplus_above_min > 0.0 {
             (allocatable as f64 / surplus_above_min).min(1.0)
@@ -329,14 +337,30 @@ pub async fn rebalance_cycle(
             .iter()
             .zip(req.stations.iter())
             .map(|((sid, t), s)| {
-                let above_min = t.saturating_sub(1);
-                let scaled = 1 + (above_min as f64 * scale).round() as u32;
+                let above_min = t.saturating_sub(per_station_floor);
+                let scaled = per_station_floor + (above_min as f64 * scale).round() as u32;
                 (*sid, scaled.min(s.capacity))
             })
             .collect();
     }
 
     // Step 2: solve rebalance.
+    // Build the actual targets response from the (possibly normalized) target_pairs
+    // so the caller sees exactly what the solver received.
+    let actual_targets: Vec<TargetInventory> = target_pairs
+        .iter()
+        .map(|(sid, target)| {
+            // Preserve is_peak from the original prediction-based targets where available.
+            let is_peak = targets.iter().find(|t| t.station_id == *sid).map(|t| t.is_peak).unwrap_or(false);
+            TargetInventory {
+                station_id: *sid,
+                target_bikes: *target,
+                is_peak,
+                reason: String::new(),
+            }
+        })
+        .collect();
+
     let input = RebalanceInput {
         stations: req.stations,
         current_status: req.current_status,
@@ -347,25 +371,26 @@ pub async fn rebalance_cycle(
     };
     let output = state.solver.solve(&input);
 
-    Json(CycleResp {
-        targets,
+    Ok(Json(CycleResp {
+        targets: actual_targets,
         dispatch_plan: output.dispatch_plan,
         incentives: output.incentives,
-    })
+    }))
 }
 
-pub async fn get_config(State(state): State<AppState>) -> Json<SystemConfig> {
+pub async fn get_config(State(state): State<AppState>) -> Result<Json<SystemConfig>, (StatusCode, String)> {
     let config = state.config.read().await;
-    Json(config.clone())
+    Ok(Json(config.clone()))
 }
 
 pub async fn put_config(
     State(state): State<AppState>,
     Json(new_config): Json<SystemConfig>,
-) -> Json<SystemConfig> {
+) -> Result<Json<SystemConfig>, (StatusCode, String)> {
+    new_config.validate().map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     let mut config = state.config.write().await;
     *config = new_config.clone();
-    Json(new_config)
+    Ok(Json(new_config))
 }
 
 #[cfg(test)]

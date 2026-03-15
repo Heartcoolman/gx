@@ -1,4 +1,5 @@
 import type { DispatchVehicle, RouteStop, VehicleRoute } from '../types/dispatch';
+import { congestionCoefficient } from './ridingModel';
 
 /** Base vehicle speed in m/s (motor vehicle on campus). */
 const BASE_VEHICLE_SPEED_MPS = 5;
@@ -42,18 +43,15 @@ function distanceBetween(distanceMatrix: number[][], fromStationId: number, toSt
 
 /**
  * Time-of-day congestion factor for dispatch vehicles.
- * Peak hours slow vehicles down on campus roads.
+ * Reuses the smooth Gaussian LUT from ridingModel, with a 0.9 depth
+ * multiplier — vehicles are more affected by road congestion than bikes.
  */
 function congestionFactor(hour: number): number {
-  // Morning 7-9, lunch 11-13, afternoon 16-18
-  if ((hour >= 7 && hour <= 8) || (hour >= 11 && hour <= 12) || (hour >= 16 && hour <= 17)) {
-    return 0.75;
-  }
-  // Mild congestion around peaks
-  if ((hour >= 9 && hour <= 10) || (hour >= 13 && hour <= 14) || (hour >= 15 && hour <= 15)) {
-    return 0.88;
-  }
-  return 1.0;
+  const minute = Math.min(Math.max(Math.round(hour * 60), 0), 1439);
+  const riderCongestion = congestionCoefficient(minute);
+  // Vehicle depth: amplify the reduction by 0.9x
+  // riderCongestion is 1.0 − reduction, so vehicle = 1.0 − reduction / 0.9
+  return 1.0 - (1.0 - riderCongestion) / 0.9;
 }
 
 function effectiveVehicleSpeed(env?: DispatchEnvironment): number {

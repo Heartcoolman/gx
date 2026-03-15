@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::error::CoreError;
 use crate::{DispatchPlan, DispatchVehicle, PriceIncentive, Station, StationId, StationStatus};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,6 +33,24 @@ impl Default for SystemConfig {
             incentive_budget_per_hour: 800.0,
             rebalance_interval_minutes: 15,
         }
+    }
+}
+
+impl SystemConfig {
+    pub fn validate(&self) -> Result<(), CoreError> {
+        if self.ewma_alpha <= 0.0 || self.ewma_alpha >= 1.0 {
+            return Err(CoreError::InvalidConfig(format!("ewma_alpha must be in (0,1), got {}", self.ewma_alpha)));
+        }
+        if self.safety_buffer_ratio < 0.0 {
+            return Err(CoreError::InvalidConfig(format!("safety_buffer_ratio must be >= 0, got {}", self.safety_buffer_ratio)));
+        }
+        if self.max_incentive_discount < 0.0 || self.max_incentive_discount > 100.0 {
+            return Err(CoreError::InvalidConfig(format!("max_incentive_discount must be in [0,100], got {}", self.max_incentive_discount)));
+        }
+        if self.dispatch_vehicle_capacity == 0 {
+            return Err(CoreError::InvalidConfig("dispatch_vehicle_capacity must be > 0".into()));
+        }
+        Ok(())
     }
 }
 

@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { useMap } from 'react-leaflet';
-import type { ActiveRide } from '../../simulation/stateManager';
+import type { ActiveRideV2 } from '../../types/scenario';
 import { STATIONS } from '../../data/stations';
 import { MAX_VISIBLE_RIDES } from '../../data/constants';
 
 interface Props {
-  rides: ActiveRide[];
+  rides: ActiveRideV2[];
 }
 
 // Compute a bezier curve control point for arc between two points
@@ -34,6 +34,9 @@ function bezierPoint(
 export default function BikeFlowLayer({ rides }: Props) {
   const map = useMap();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const ridesRef = useRef<ActiveRideV2[]>([]);
+  ridesRef.current = rides;
+
   useEffect(() => {
     const container = map.getContainer();
     let canvas = canvasRef.current;
@@ -65,7 +68,7 @@ export default function BikeFlowLayer({ rides }: Props) {
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const visibleRides = rides.slice(0, MAX_VISIBLE_RIDES);
+      const visibleRides = ridesRef.current.slice(0, MAX_VISIBLE_RIDES);
       for (const ride of visibleRides) {
         const origin = STATIONS[ride.origin];
         const dest = STATIONS[ride.destination];
@@ -94,10 +97,15 @@ export default function BikeFlowLayer({ rides }: Props) {
 
     draw();
 
-    const interval = setInterval(draw, 100);
+    let rafId: number;
+    function loop() {
+      draw();
+      rafId = requestAnimationFrame(loop);
+    }
+    rafId = requestAnimationFrame(loop);
 
     return () => {
-      clearInterval(interval);
+      cancelAnimationFrame(rafId);
       map.off('resize', resize);
       map.off('move', draw);
       map.off('zoom', draw);
@@ -106,7 +114,7 @@ export default function BikeFlowLayer({ rides }: Props) {
       }
       canvasRef.current = null;
     };
-  }, [map, rides]);
+  }, [map]);
 
   return null;
 }

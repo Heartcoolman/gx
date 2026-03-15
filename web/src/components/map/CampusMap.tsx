@@ -6,10 +6,18 @@ import DispatchRouteLayer from './DispatchRouteLayer';
 import MapLegend from './MapLegend';
 import { STATIONS } from '../../data/stations';
 import { useSimulationStore } from '../../store/simulationStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useUIStore } from '../../store/uiStore';
 
 export default function CampusMap() {
-  const { bikes, brokenBikes, stationPressure, activeRides, vehicleAnimations, latestPlan } = useSimulationStore();
+  const { bikes, brokenBikes, stationPressure, activeRides, vehicleAnimations, latestPlan } = useSimulationStore(useShallow(s => ({
+    bikes: s.bikes,
+    brokenBikes: s.brokenBikes,
+    stationPressure: s.stationPressure,
+    activeRides: s.activeRides,
+    vehicleAnimations: s.vehicleAnimations,
+    latestPlan: s.latestPlan,
+  })));
   const { showBikeFlows, showDispatchRoutes } = useUIStore();
 
   return (

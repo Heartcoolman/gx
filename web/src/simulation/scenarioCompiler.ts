@@ -1,15 +1,12 @@
 import { SCENARIO_BUNDLES, getScenarioById } from '../data/scenarioLibrary';
 import type { ScenarioBundle, ScenarioPackage, WeatherKind } from '../types/scenario';
 import { SeededRandom } from './rng';
+import { clamp } from '../utils/math';
 
 export interface CompilerOptions {
   seed?: number;
   demandBias?: number;
   weatherOverride?: WeatherKind;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }
 
 function shiftScenario(

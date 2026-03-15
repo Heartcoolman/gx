@@ -1,10 +1,15 @@
 import { STATIONS } from '../../data/stations';
 import { useSimulationStore } from '../../store/simulationStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useUIStore } from '../../store/uiStore';
 import StationCard from './StationCard';
 
 export default function StationList() {
-  const { bikes, brokenBikes, stationPressure } = useSimulationStore();
+  const { bikes, brokenBikes, stationPressure } = useSimulationStore(useShallow(s => ({
+    bikes: s.bikes,
+    brokenBikes: s.brokenBikes,
+    stationPressure: s.stationPressure,
+  })));
   const { selectedStationId, selectStation } = useUIStore();
 
   return (
